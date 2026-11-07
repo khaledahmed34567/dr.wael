@@ -164,7 +164,7 @@ footer .tl{color:var(--ink);text-decoration:underline;font-weight:700;display:in
 .btn.gold{background:var(--gold);color:#1a1200}.btn.ghost{background:#f0f0f3;color:var(--ink)}
 .mini{padding:7px 16px;font-size:14px}
 .fi{padding:11px 14px;font-size:15px;border:0;background:#f3f3f6;border-radius:14px}.fi:focus{box-shadow:0 0 0 2px #d6d9ec}
-.logo{width:min(40vw,165px)}#splash.en .logo{width:min(46vw,190px)}
+.logo{width:min(40vw,165px)}html[lang=en] .logo{width:min(40vw,140px)}html[lang=en] .logo-sm{height:19px!important;max-width:none!important}html[lang=en] #auth .logo-sm{height:22px!important}
 .logo-sm{height:36px!important;max-width:40%!important}#auth .logo-sm{height:40px!important}input[type=file]{font-size:13px;color:var(--mute)}input[type=file]::file-selector-button{border:0;border-radius:999px;padding:7px 14px;margin-inline-end:10px;background:#101426;color:#fff;font-family:inherit;font-weight:700}
 .abox{padding:16px;border-radius:26px}
 #atabs button{padding:9px;font-size:14.5px}
@@ -321,7 +321,7 @@ function vForum(){body.innerHTML=`<div class="seg"><button data-b="public" class
 if(fb==="vip"&&!VIP()&&P.role!=="admin"){$("#fb").innerHTML=`<div class="stat">${t("vipOnly")}</div><button class="btn gold" id="vb" style="margin-top:10px">${t("pay")}</button>`;$("#vb").onclick=()=>payModal("vip",ST.vipPrice||0);return}
 $("#fb").innerHTML=`<div class="card"><textarea class="fi" id="pt" rows="3" placeholder="${t("ask")}"></textarea><div class="small">${t("limit")} · $x^2$ · $\\ce{H2O}$</div><label class="mini clr" style="display:inline-flex;gap:6px">${ic("img",18)}<span>${t("imgs")} (${VIP()||P.role==="admin"?8:3})</span><input id="pi" type="file" accept="image/*" multiple hidden></label><div id="pn" class="small"></div><button class="btn gold" id="pb" style="margin-top:8px">${t("post")}</button><div id="pm"></div></div><div id="pl"></div>`;
 $("#pi").onchange=e=>{const mx=VIP()||P.role==="admin"?8:3;$("#pn").textContent=Math.min(e.target.files.length,mx)+" / "+mx};$("#pb").onclick=post;loadPosts()}
-async function imgbb(f){const fd=new FormData();fd.append("image",f);const r=await fetch("https://api.imgbb.com/1/upload?key="+encodeURIComponent(CFG.imgbb),{method:"POST",body:fd});const j=await r.json();if(!j.success)throw 0;return j.data.url}
+async function imgbb(f){const fd=new FormData();fd.append("image",f);const r=await fetch("https://api.imgbb.com/1/upload?key="+encodeURIComponent(CFG.imgbb),{method:"POST",body:fd});const j=await r.json();if(!j.success)throw Error("imgbb");return j.data.url}
 async function post(){const b=$("#pb"),tx=$("#pt").value.trim(),pm=$("#pm");if(!tx)return;const adm=P.role==="admin",vp=VIP(),gap=adm?0:vp?3e5:36e5,n=Date.now(),dt=new Date(n),day=dt.getUTCFullYear()*10000+(dt.getUTCMonth()+1)*100+dt.getUTCDate();
 const w=gap-(n-(P.lastPostAt||0));if(w>0){pm.innerHTML=`<div class="stat err">${t("wait")} ${Math.ceil(w/6e4)} ${lang==="ar"?"دقيقة":"min"}</div>`;return}
 if(!vp&&!adm&&P.pDay===day&&(P.pCnt||0)>=4){pm.innerHTML=`<div class="stat err">${t("limit")}</div>`;return}
@@ -421,14 +421,14 @@ if(o.kind==="vip"){const until=Math.max(P.vipUntil||0,n)+(o.item==="vipM1"?30:90
 else{bt.update(db.doc("users/"+U.uid),{wallet:nb,lastBuy:o.item});bt.set(db.doc("subs/"+U.uid+"_"+o.item),{uid:U.uid,courseId:o.item,via:"wallet",at:n});SUBS[o.item]=1}
 bt.set(pr,{...base,receipt:"",status:"accepted",decidedAt:n,seen:true,via:"wallet"});await bt.commit();P.wallet=nb;P.lastBuy=o.item;PAYS[pr.id]={id:pr.id,...base,status:"accepted",decidedAt:n};await wait(t0);
 fin(`<div class="gok"><img src="${OKI}" alt=""><h2>${t("gwOk")}</h2><p class="small">${t("gwOkS")}</p><button class="gpay" id="gi" style="width:100%">${t("invP")}</button><button class="btn ghost" id="gc" style="width:100%">${t("close")}</button></div>`);$("#gc").onclick=()=>{close();if(cur==="ai")vAi();else nav(cur)};$("#gi").onclick=()=>{close();vMyPays()}}
-catch(e){g.querySelector(".gld")&&g.querySelector(".gld").remove();err("err")}}
+catch(e){g.querySelector(".gld")&&g.querySelector(".gld").remove();$("#gmx").innerHTML=`<div class="stat err">${t("err")} (${esc(e&&(e.code||e.message)||"")})</div>`}}
 draw()}
 const wait=async t0=>new Promise(r=>setTimeout(r,Math.max(0,1500-(Date.now()-t0))));
 /* ---------- plans & wallet ---------- */
 function vSubs(){const on=VIP();const pl=[["vipM1","plan1",ST.vipM1],["vipM3","plan3",ST.vipM3]];sub(t("subs"),`<div class="card">${on?`<div class="stat ok">${VIP()?"VIP":t("until")+" "+fd(P.vipUntil)}</div>`:""}<p class="small">${t("planD")}</p></div>`+pl.map(p=>`<div class="item"><div class="nm">${t(p[1])}</div><div class="meta">${p[2]?esc(p[2])+" "+t("egp"):t("noPrice")}</div><div class="acts"><button class="dl" data-pl="${p[0]}" ${p[2]?"":"disabled"}>${t("pay")}</button></div></div>`).join(""));
 $$("[data-pl]").forEach(b=>b.onclick=()=>{const p=pl.find(x=>x[0]===b.dataset.pl);gw({kind:"vip",item:p[0],title:t(p[1]),amount:+p[2]})})}
 async function vWallet(){sub(t("wallet"),`<div class="card wcard"><small>${t("bal")}</small><div class="wbal"><b>${P.wallet||0}</b> ${t("egp")}</div></div><div class="card"><div class="lab">${t("topup")}</div><div class="chips" id="wa">${[50,100,200,500].map(a=>`<button class="chip" data-a="${a}">${a}</button>`).join("")}</div><input class="fi" id="wc" type="number" inputmode="numeric" min="10" placeholder="${t("custom")}" style="margin-top:10px"><button class="btn gold" id="wg">${t("charge")}</button></div><div class="lab">${t("myPays")}</div><div id="pl2"></div>`);
-$$("[data-a]").forEach(b=>b.onclick=()=>{$("#wc").value=b.dataset.a});$("#wg").onclick=()=>{const a=Math.floor(+$("#wc").value);if(!(a>=10))return;gw({kind:"wallet",item:"wallet",title:t("topup"),amount:a})};
+$$("[data-a]").forEach(b=>b.onclick=()=>{$("#wc").value=b.dataset.a});$("#wg").onclick=()=>{const a=Math.floor(+$("#wc").value);if(!(a>=10)){$("#wc").focus();$("#wc").style.boxShadow="0 0 0 2px #d6455d";return}gw({kind:"wallet",item:"wallet",title:t("topup"),amount:a})};
 const s=await db.collection("payments").where("uid","==",U.uid).limit(100).get();const l=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>b.createdAt-a.createdAt);$("#pl2").innerHTML=l.length?l.map(p=>`<div class="item"><div class="nm">${esc(p.title)} — ${esc(p.amount)} ${t("egp")}</div><div class="meta">${stLbl(p.status)} · ${fd(p.createdAt)}</div>${invBtns(p)}</div>`).join(""):`<div class="empty">${t("none2")}</div>`;wireInv()}
 /* ---------- success overlay ---------- */
 function watchOk(){db.collection("payments").where("uid","==",U.uid).onSnapshot(s=>{const q=s.docs.map(d=>({id:d.id,...d.data()})).filter(x=>x.status==="accepted"&&x.seen===false);if(q.length)showOk(q[0]);if(s.docs.some(d=>d.data().item==="wallet"||d.data().status==="accepted"))db.doc("users/"+U.uid).get().then(d=>{if(d.exists){P={...P,...d.data()};hdr()}}).catch(()=>{})},()=>{})}
