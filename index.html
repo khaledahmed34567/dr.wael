@@ -301,6 +301,13 @@ html[data-theme=dark] .stat{background:#20243d;color:#cfd4ff}html[data-theme=dar
 .rn{flex:none;width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--h1),var(--h2));color:#fff;font-style:normal;font-weight:700;font-size:15px;display:flex;align-items:center;justify-content:center}
 .rcard h3{font-size:16px;margin-bottom:3px}
 .rcard p{font-size:14.5px;line-height:1.85;color:var(--ink)}
+.pgw{position:relative;margin-bottom:6px}.pgw .pdfp{margin:0;position:absolute;inset:0;height:100%}
+.ann{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.pdfc.edit .ann{pointer-events:auto;touch-action:none;cursor:crosshair}.pdfc.edit.mv .ann{pointer-events:none;touch-action:auto}
+.annbar{position:sticky;top:0;z-index:6;background:var(--card);border-radius:16px;padding:8px;margin-bottom:8px;box-shadow:0 2px 10px rgba(20,25,60,.12)}
+.abr{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px}.abr:last-child{margin-bottom:0}
+.annbar .chip.on{background:var(--gold);color:#1a1200}
+.acol{width:26px;height:26px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.25);flex:none}.acol.on{box-shadow:0 0 0 3px var(--gold)}
 .fbro{opacity:.75;margin-bottom:4px}
 .hrk.top{width:26px;height:26px;line-height:26px;border-radius:50%;background:var(--gold);color:#1a1200;flex:none}
 </style>
@@ -1818,10 +1825,7 @@ const fs_=()=>{const on=vp.classList.toggle("fsx");document.documentElement.styl
 v.onerror=()=>{box.insertAdjacentHTML("beforeend",`<div class="stat err">${L("تعذر تشغيل الملف","Could not play the file")}</div>`)};return v}
 const pdfHtml=k=>{const n=norm(k.url,"pdf");if(!n)return`<div class="stat err">${L("رابط غير صالح","Invalid link")}</div>`;if(n.k==="frame")return`<iframe class="ifr tall" src="${esc(n.src)}"></iframe>`+openLink(n);return`<div id="pdfc" class="pdfc"><div class="small" style="text-align:center;padding:30px 0">${L("جاري تحميل الملف...","Loading file...")}</div></div>`+openLink(n)};
 async function wirePdf(k){const box=$("#pdfc");if(!box)return;const n=norm(k.url,"pdf");const fb=()=>{box.innerHTML=`<iframe class="ifr tall" src="https://docs.google.com/viewer?embedded=true&url=${encodeURIComponent(n.src)}"></iframe>`};
-try{if(!window.pdfjsLib)throw 0;pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";const r=await fetch(n.src);if(!r.ok)throw 0;const pdf=await pdfjsLib.getDocument({data:await r.arrayBuffer()}).promise;box.innerHTML="";const w=box.clientWidth||340,dpr=Math.min(2,window.devicePixelRatio||1);
-const p1=await pdf.getPage(1),v1=p1.getViewport({scale:1}),sc=w/v1.width;
-const io=new IntersectionObserver(es=>es.forEach(async e=>{if(!e.isIntersecting)return;const c=e.target;io.unobserve(c);const pg=await pdf.getPage(+c.dataset.p),vp=pg.getViewport({scale:sc*dpr});c.width=vp.width;c.height=vp.height;await pg.render({canvasContext:c.getContext("2d"),viewport:vp}).promise}),{rootMargin:"600px"});
-for(let i=1;i<=pdf.numPages;i++){const c=document.createElement("canvas");c.dataset.p=i;c.className="pdfp";c.style.aspectRatio=v1.width+"/"+v1.height;box.appendChild(c);io.observe(c)}}catch(e){fb()}}
+try{if(!window.pdfjsLib)throw 0;pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";const r=await fetch(n.src);if(!r.ok)throw 0;const pdf=await pdfjsLib.getDocument(pdfOpts(await r.arrayBuffer())).promise;box.innerHTML="";await pdfShow(box,pdf,"k"+(k.id||n.src))}catch(e){const ob=$("#annbar");if(ob)ob.remove();fb()}}
 /* ---------- courses: cover + progress ---------- */
 const pbar=Tk=>{const tot=Tk.length,dn=Tk.filter(k=>PR[k.id]&&PR[k.id].done).length,p=tot?Math.round(dn/tot*100):0;return`<div class="card" style="padding:14px"><div style="display:flex;justify-content:space-between;font-weight:700;font-size:14px"><span>${L("تقدمك في الدورة","Your progress")}</span><span>${dn} / ${tot} — ${p}%</span></div><div class="bar"><i style="width:${p}%"></i></div></div>`};
 /* ---------- reminders ---------- */
@@ -1930,10 +1934,44 @@ const fmtSize=n=>n>=1048576?(n/1048576).toFixed(1)+" MB":Math.max(1,Math.round(n
 const FC={};
 async function getFile(fid,onp){if(FC[fid])return FC[fid];const m=await db.doc("files/"+fid).get();if(!m.exists)throw Error("file");const md=m.data(),parts=[];for(let i=0;i<md.chunks;i+=4){const ids=[...Array(Math.min(4,md.chunks-i))].map((_,j)=>i+j);const ss=await Promise.all(ids.map(n=>db.doc("files/"+fid+"/c/"+n).get()));ss.forEach(s=>parts.push(s.data().d.toUint8Array()));if(onp)onp(Math.round(Math.min(md.chunks,i+ids.length)/md.chunks*100))}
 const blob=new Blob(parts,{type:md.mime||"application/octet-stream"});return FC[fid]={blob,url:URL.createObjectURL(blob),meta:md}}
-async function pdfBlob(f){const box=$("#pdfc");try{if(!window.pdfjsLib)throw 0;pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";const pdf=await pdfjsLib.getDocument({data:await f.blob.arrayBuffer()}).promise,w=box.clientWidth||340,dpr=Math.min(2,window.devicePixelRatio||1),p1=await pdf.getPage(1),v1=p1.getViewport({scale:1}),sc=w/v1.width;
-const io=new IntersectionObserver(es=>es.forEach(async e=>{if(!e.isIntersecting)return;const c=e.target;io.unobserve(c);const pg=await pdf.getPage(+c.dataset.p),vp=pg.getViewport({scale:sc*dpr});c.width=vp.width;c.height=vp.height;await pg.render({canvasContext:c.getContext("2d"),viewport:vp}).promise}),{rootMargin:"600px"});
-for(let i=1;i<=pdf.numPages;i++){const c=document.createElement("canvas");c.dataset.p=i;c.className="pdfp";c.style.aspectRatio=v1.width+"/"+v1.height;box.appendChild(c);io.observe(c)}}catch(e){box.innerHTML=`<iframe class="ifr tall" src="${esc(f.url)}"></iframe>`}}
-function fileLoad(k){if(!k.fileId||k.type==="text"||k.type==="quiz")return;getFile(k.fileId,p=>{const e=$("#fpc");if(e)e.textContent=p+"%"}).then(f=>{const b=$("#fbox");if(!b)return;if(k.type==="pdf"){b.innerHTML=`<div id="pdfc" class="pdfc"></div>`;pdfBlob(f)}else mkPlayer(b,f.url,k.type)}).catch(()=>{const b=$("#fbox");if(b)b.innerHTML=`<div class="stat err">${t("err")}</div>`})}
+/* ----- shared PDF viewer: crisp rendering + notes layer ----- */
+const pdfOpts=d=>({data:d,disableFontFace:true,isEvalSupported:false,useSystemFonts:false,cMapUrl:"https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/",cMapPacked:true,standardFontDataUrl:"https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/standard_fonts/"});
+const annKey=k=>"dw_ann_"+(U?U.uid:"x")+"_"+k,annDoc=k=>"annotations/"+(U?U.uid:"x")+"_"+String(k).replace(/[^\w-]/g,"_"),canCloud=()=>VIP()||(P&&P.role==="admin");
+const annLoad=k=>{try{const a=JSON.parse(ls.get(annKey(k))||"null");return a&&a.pages?a:{at:0,pages:{}}}catch(e){return{at:0,pages:{}}}};
+const _ct={};
+function annSave(k,A){A.at=Date.now();ls.set(annKey(k),JSON.stringify(A));if(SET().annCloud&&canCloud()){clearTimeout(_ct[k]);_ct[k]=setTimeout(()=>annPush(k,A),2500)}}
+async function annPush(k,A,loud){const s=JSON.stringify(A);if(s.length>900000){toast(L("التعليقات كبيرة جدًا للحفظ في الحساب","Notes are too large for account save"));return}try{await db.doc(annDoc(k)).set({uid:U.uid,at:A.at||Date.now(),d:s});if(loud)toast(L("تم الحفظ في حسابك","Saved to your account"))}catch(e){toast(L("تعذر الحفظ في الحساب، تعليقاتك محفوظة على جهازك","Could not save to account; your notes are saved on this device"))}}
+async function annPull(k,A){if(!(SET().annCloud&&canCloud()))return A;try{const d=await db.doc(annDoc(k)).get();if(d.exists&&d.data().at>(A.at||0)){const c=JSON.parse(d.data().d);if(c&&c.pages){ls.set(annKey(k),d.data().d);return c}}}catch(e){}return A}
+function annDraw(cv,items){const x=cv.getContext("2d"),W=cv.width,H=cv.height;x.clearRect(0,0,W,H);items.forEach(it=>{if(it.k==="t"){x.globalAlpha=1;x.fillStyle=it.c;x.font="700 "+(it.f*W)+"px AJ";x.direction="ltr";x.textAlign="left";x.textBaseline="top";x.fillText(it.s,it.x*W,it.y*H);return}x.globalAlpha=it.k==="h"?.35:1;x.strokeStyle=it.c;x.lineWidth=it.w*W;x.lineCap=x.lineJoin="round";x.beginPath();const p=it.p;x.moveTo(p[0]*W,p[1]*H);if(p.length===2)x.lineTo(p[0]*W+.1,p[1]*H);for(let i=2;i<p.length;i+=2)x.lineTo(p[i]*W,p[i+1]*H);x.stroke()});x.globalAlpha=1}
+async function pdfShow(box,pdf,key){const ob=$("#annbar");if(ob)ob.remove();
+const w=box.clientWidth||340,dpr=Math.min(2,window.devicePixelRatio||1),p1=await pdf.getPage(1),v1=p1.getViewport({scale:1}),sc=w/v1.width,ar=v1.height/v1.width;
+let A=annLoad(key);const S={tool:"pen",col:"#e11d48",edit:false},hist=[],ovs={};const items=pn=>A.pages[pn]||(A.pages[pn]=[]);
+const COLS=["#111827","#e11d48","#2563eb","#059669","#facc15","#a855f7"];
+const bar=document.createElement("div");bar.id="annbar";bar.className="annbar";
+bar.innerHTML=`<div class="abr"><button class="chip" id="abE">${L("✎ تعليم وملاحظات","✎ Notes & marking")}</button><button class="chip hide" id="abC"></button></div><div class="abt hide" id="abT"><div class="abr"><button class="chip on" data-t="pen">${L("قلم","Pen")}</button><button class="chip" data-t="hl">${L("ماركر","Highlighter")}</button><button class="chip" data-t="text">${L("نص","Text")}</button><button class="chip" data-t="eraser">${L("ممحاة","Eraser")}</button><button class="chip" data-t="move">${L("تمرير","Scroll")}</button></div><div class="abr">${COLS.map((c,i)=>`<button class="acol${i===1?" on":""}" data-c="${c}" style="background:${c}"></button>`).join("")}<button class="chip" id="abU">${L("تراجع","Undo")}</button><button class="chip" id="abX">${L("مسح الكل","Clear all")}</button></div><div class="small" style="margin:6px 2px 0">${L("تُحفظ تعليقاتك على جهازك تلقائيًا. اختر «تمرير» لتحريك الصفحة دون رسم.","Your notes are saved on this device automatically. Pick “Scroll” to move the page without drawing.")}</div></div>`;
+box.parentNode.insertBefore(bar,box);box.innerHTML="";
+const cloudBtn=()=>{const b=$("#abC");b.classList.remove("hide");const on=!!SET().annCloud&&canCloud();b.classList.toggle("on",on);b.textContent=L("حفظ في حسابي","Save to account")+(canCloud()?"":" (Pro)")};
+const redrawAll=()=>Object.keys(ovs).forEach(pn=>annDraw(ovs[pn],items(pn)));
+const commit=pn=>{annDraw(ovs[pn],items(pn));annSave(key,A)};
+$("#abE").onclick=()=>{S.edit=!S.edit;box.classList.toggle("edit",S.edit);$("#abE").classList.toggle("on",S.edit);$("#abT").classList.toggle("hide",!S.edit);cloudBtn()};
+$("#abC").onclick=()=>{if(!canCloud()){toast(L("حفظ التعليقات في حسابك لمشتركي برو","Saving notes to your account is for Pro subscribers"));return}const on=!SET().annCloud;setS("annCloud",on);cloudBtn();if(on){A.at=Date.now();annPush(key,A,true)}};
+$$("#abT [data-t]").forEach(b=>b.onclick=()=>{S.tool=b.dataset.t;$$("#abT [data-t]").forEach(z=>z.classList.toggle("on",z===b));box.classList.toggle("mv",S.tool==="move")});
+$$("#abT [data-c]").forEach(b=>b.onclick=()=>{S.col=b.dataset.c;$$("#abT [data-c]").forEach(z=>z.classList.toggle("on",z===b))});
+$("#abU").onclick=()=>{while(hist.length){const pn=hist.pop(),it=items(pn);if(it.length&&ovs[pn]){it.pop();commit(pn);return}}};
+$("#abX").onclick=()=>{if(!confirm(L("مسح كل التعليقات على هذا الملف؟","Clear all notes on this file?")))return;A.pages={};hist.length=0;redrawAll();annSave(key,A)};
+const wire=(cv,pn)=>{let cur=null;const P_=e=>{const r=cv.getBoundingClientRect();return[+((e.clientX-r.left)/r.width).toFixed(4),+((e.clientY-r.top)/r.height).toFixed(4)]};
+const erase=pt=>{const it=items(pn),n=it.length,k=it.filter(o=>{if(o.k==="t"){const tw=o.s.length*o.f*.55,d=(pt[1]-o.y)*ar;return!(pt[0]>o.x-.02&&pt[0]<o.x+tw+.02&&d>-.02&&d<o.f+.02)}for(let i=0;i<o.p.length;i+=2)if(Math.hypot(pt[0]-o.p[i],(pt[1]-o.p[i+1])*ar)<.03)return false;return true});if(k.length!==n){A.pages[pn]=k;annDraw(cv,k);return true}return false};
+let ch=false;
+cv.onpointerdown=e=>{if(!S.edit||S.tool==="move")return;e.preventDefault();const pt=P_(e);if(S.tool==="text"){const s=prompt(L("اكتب النص","Enter text"));if(s&&s.trim()){items(pn).push({k:"t",c:S.col,x:pt[0],y:pt[1],s:s.trim().slice(0,200),f:.032});hist.push(pn);commit(pn)}return}try{cv.setPointerCapture(e.pointerId)}catch(x){}
+if(S.tool==="eraser"){cur=1;ch=erase(pt);return}cur={k:S.tool==="hl"?"h":"p",c:S.col,w:S.tool==="hl"?.024:.0042,p:[pt[0],pt[1]]};items(pn).push(cur);annDraw(cv,items(pn))};
+cv.onpointermove=e=>{if(!cur)return;e.preventDefault();const pt=P_(e);if(cur===1){if(erase(pt))ch=true;return}const p=cur.p;if(Math.hypot(pt[0]-p[p.length-2],(pt[1]-p[p.length-1])*ar)<.0025)return;p.push(pt[0],pt[1]);annDraw(cv,items(pn))};
+const up=()=>{if(!cur)return;if(cur===1){if(ch)annSave(key,A)}else{hist.push(pn);annSave(key,A)}cur=null;ch=false};cv.onpointerup=cv.onpointercancel=up};
+const io=new IntersectionObserver(es=>es.forEach(async e=>{if(!e.isIntersecting)return;const c=e.target;io.unobserve(c);const pn=+c.dataset.p,pg=await pdf.getPage(pn),vp=pg.getViewport({scale:sc*dpr});c.width=vp.width;c.height=vp.height;await pg.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;const o=c.nextElementSibling;o.width=vp.width;o.height=vp.height;ovs[pn]=o;annDraw(o,items(pn));wire(o,pn)}),{rootMargin:"600px"});
+for(let i=1;i<=pdf.numPages;i++){const wr=document.createElement("div");wr.className="pgw";wr.style.aspectRatio=v1.width+"/"+v1.height;const c=document.createElement("canvas");c.dataset.p=i;c.className="pdfp";const o=document.createElement("canvas");o.className="ann";wr.appendChild(c);wr.appendChild(o);box.appendChild(wr);io.observe(c)}
+cloudBtn();$("#abC").classList.add("hide");
+annPull(key,A).then(n=>{if(n!==A){A=n;redrawAll()}})}
+async function pdfBlob(f,fid){const box=$("#pdfc");try{if(!window.pdfjsLib)throw 0;pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";const pdf=await pdfjsLib.getDocument(pdfOpts(await f.blob.arrayBuffer())).promise;await pdfShow(box,pdf,"f"+(fid||"x"))}catch(e){const ob=$("#annbar");if(ob)ob.remove();box.innerHTML=`<iframe class="ifr tall" src="${esc(f.url)}"></iframe>`}}
+function fileLoad(k){if(!k.fileId||k.type==="text"||k.type==="quiz")return;getFile(k.fileId,p=>{const e=$("#fpc");if(e)e.textContent=p+"%"}).then(f=>{const b=$("#fbox");if(!b)return;if(k.type==="pdf"){b.innerHTML=`<div id="pdfc" class="pdfc"></div>`;pdfBlob(f,k.fileId)}else mkPlayer(b,f.url,k.type)}).catch(()=>{const b=$("#fbox");if(b)b.innerHTML=`<div class="stat err">${t("err")}</div>`})}
 /* ----- multi-page PDF & text pages ----- */
 function pdfJm(cs){const E=new TextEncoder(),parts=[],offs=[];let off=0;const pu=s=>{const a=typeof s==="string"?E.encode(s):s;parts.push(a);off+=a.length},n=cs.length,pw=595,ph=Math.round(595*cs[0].height/cs[0].width);
 pu("%PDF-1.4\n");offs[1]=off;pu("1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n");offs[2]=off;pu(`2 0 obj<</Type/Pages/Kids[${cs.map((_,i)=>(3+i*3)+" 0 R").join(" ")}]/Count ${n}>>endobj\n`);
