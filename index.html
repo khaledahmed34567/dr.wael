@@ -609,12 +609,1681 @@ body.dw-blur>:not(#dw-shield){filter:blur(24px)}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
-<script>if(!window.d3){document.write('<scr'+'ipt src="d3.min.js"></scr'+'ipt>')}</script>
-<script src="course-alerts.js"></script>
-<script src="course-features.js"></script>
-<script src="student-badges.js"></script>
-<script src="progress-chart.js"></script>
-<script src="student-pro.js"></script>
+<script>
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) {
+    module.exports = factory();
+  } else {
+    root.DWCourseAlerts = factory();
+  }
+}(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  function txt(lang, ar, en) {
+    return lang === 'en' ? en : ar;
+  }
+
+  function formatLectureCount(count, lang) {
+    if (typeof count !== 'number' || !Number.isFinite(count) || count < 0) {
+      return lang === 'en' ? 'Updated on open' : 'يُعرض عند الفتح';
+    }
+    if (lang === 'en') {
+      return count === 1 ? '1 Lecture' : count + ' Lectures';
+    }
+    if (count === 0) return '0 محاضرات';
+    if (count === 1) return 'محاضرة واحدة';
+    if (count === 2) return 'محاضرتان';
+    if (count <= 10) return count + ' محاضرات';
+    return count + ' محاضرة';
+  }
+
+  function formatTaskCount(count, lang) {
+    if (typeof count !== 'number' || !Number.isFinite(count) || count < 0) return '';
+    if (lang === 'en') return count === 1 ? '1 Task' : count + ' Tasks';
+    if (count === 0) return '0 مهام';
+    if (count === 1) return 'مهمة واحدة';
+    if (count === 2) return 'مهمتان';
+    if (count <= 10) return count + ' مهام';
+    return count + ' مهمة';
+  }
+
+  function buildCourseDetails(course, lectures, tasks, lang, cachedLectureCount) {
+    const c = course || {};
+    const l = lang === 'en' ? 'en' : 'ar';
+    const title = l === 'en' ? (c.titleEn || c.title || 'Course') : (c.title || c.titleEn || 'الدورة');
+    const rawInstructor = l === 'en'
+      ? (c.instructorEn || c.instructor || c.lecturerEn || c.lecturer || c.doctor || c.teacher)
+      : (c.instructorAr || c.instructor || c.lecturerAr || c.lecturer || c.doctor || c.teacher);
+    const instructor = String(rawInstructor || '').trim() || txt(l, 'د. وائل · فريق التدريس', 'Dr. Wael · Teaching Team');
+
+    let lectureCount = null;
+    if (Array.isArray(lectures)) lectureCount = lectures.length;
+    else if (typeof cachedLectureCount === 'number' && Number.isFinite(cachedLectureCount)) lectureCount = cachedLectureCount;
+    else if (typeof c.lectureCount === 'number' && Number.isFinite(c.lectureCount)) lectureCount = c.lectureCount;
+    else if (typeof c.lecturesCount === 'number' && Number.isFinite(c.lecturesCount)) lectureCount = c.lecturesCount;
+
+    let taskCount = null;
+    if (Array.isArray(tasks)) taskCount = tasks.length;
+    else if (typeof c.taskCount === 'number' && Number.isFinite(c.taskCount)) taskCount = c.taskCount;
+
+    const rawSummary = l === 'en'
+      ? (c.summaryEn || c.summary || c.descEn || c.desc || c.description)
+      : (c.summaryAr || c.summary || c.descAr || c.desc || c.description);
+
+    let summary = String(rawSummary || '').trim();
+    if (!summary) {
+      const lecTitles = Array.isArray(lectures)
+        ? lectures.map((x) => (l === 'en' ? (x.titleEn || x.title) : (x.title || x.titleEn))).filter(Boolean)
+        : [];
+      if (lecTitles.length > 0) {
+        const preview = lecTitles.slice(0, 3).join(l === 'en' ? ', ' : '، ');
+        const more = lecTitles.length > 3 ? (l === 'en' ? ' and more.' : ' والمزيد.') : '.';
+        summary = l === 'en'
+          ? `Course "${title}" covers structured lessons and tasks across ${formatLectureCount(lecTitles.length, 'en')}, including: ${preview}${more}`
+          : `تتناول دورة «${title}» شرحًا منظمًا ومهام تطبيقية عبر ${formatLectureCount(lecTitles.length, 'ar')}، وتشمل: ${preview}${more}`;
+      } else {
+        summary = l === 'en'
+          ? `Structured veterinary curriculum for "${title}" with organized lectures, study materials, and interactive progress tracking.`
+          : `محتوى تعليمي متكامل لدورة «${title}» لطلاب الطب البيطري يشمل محاضرات مرتبة ومهام تدريبية لمتابعة تقدمك.`;
+      }
+    }
+
+    return {
+      title,
+      instructor,
+      lectureCount,
+      lectureCountText: formatLectureCount(lectureCount, l),
+      taskCount,
+      taskCountText: formatTaskCount(taskCount, l),
+      summary
+    };
+  }
+
+  function getEnrolledCourses(courses, subsMap, profile) {
+    if (!Array.isArray(courses)) return [];
+    const subs = subsMap || {};
+    const p = profile || {};
+    const extras = Array.isArray(p.extra) ? p.extra : [];
+    const inCurriculum = (c) => (c.year === p.year && c.term === p.term) || extras.includes(c.id);
+    return courses.filter((c) => {
+      if (!c || !c.id) return false;
+      if (subs[c.id]) return true;
+      if (p.role === 'admin' && inCurriculum(c)) return true;
+      if (!(Number(c.price) > 0) && inCurriculum(c)) return true;
+      return false;
+    });
+  }
+
+  function parseDeadlineMs(val) {
+    if (val === null || val === undefined || val === '') return null;
+    if (typeof val === 'number') {
+      if (!Number.isFinite(val) || val <= 0) return null;
+      return val < 1e12 ? val * 1000 : val;
+    }
+    if (typeof val === 'object') {
+      if (typeof val.toMillis === 'function') {
+        const ms = val.toMillis();
+        return Number.isFinite(ms) && ms > 0 ? ms : null;
+      }
+      if (typeof val.seconds === 'number' && Number.isFinite(val.seconds)) {
+        return val.seconds * 1000;
+      }
+    }
+    if (typeof val === 'string') {
+      const s = val.trim();
+      if (!s) return null;
+      if (/^\d+$/.test(s)) return parseDeadlineMs(Number(s));
+      const ms = Date.parse(s);
+      return Number.isFinite(ms) && ms > 0 ? ms : null;
+    }
+    return null;
+  }
+
+  function formatTimeRemaining(ms, lang) {
+    const mins = Math.max(1, Math.round(ms / 60000));
+    if (mins < 60) {
+      return lang === 'en' ? `${mins} min` : (mins === 1 ? 'دقيقة واحدة' : mins <= 10 ? `${mins} دقائق` : `${mins} دقيقة`);
+    }
+    const hrs = Math.round(mins / 60);
+    if (hrs < 24) {
+      return lang === 'en' ? `${hrs} hr` : (hrs === 1 ? 'ساعة واحدة' : hrs === 2 ? 'ساعتان' : hrs <= 10 ? `${hrs} ساعات` : `${hrs} ساعة`);
+    }
+    const days = Math.round(hrs / 24);
+    return lang === 'en' ? `${days} d` : (days === 1 ? 'يوم واحد' : days === 2 ? 'يومان' : `${days} أيام`);
+  }
+
+  const DEFAULT_WINDOWS = [
+    { key: '1h', maxMs: 3600000 },
+    { key: '24h', maxMs: 86400000 }
+  ];
+
+  function findApproachingTaskAlerts(opts) {
+    const o = opts || {};
+    const tasks = Array.isArray(o.tasks) ? o.tasks : [];
+    const progressMap = o.progressMap || {};
+    const coursesById = o.coursesById || {};
+    const sentKeys = { ...(o.sentKeys || {}) };
+    const now = typeof o.now === 'number' ? o.now : Date.now();
+    const l = o.lang === 'en' ? 'en' : 'ar';
+    const windows = (Array.isArray(o.windows) && o.windows.length ? o.windows : DEFAULT_WINDOWS)
+      .slice()
+      .sort((a, b) => a.maxMs - b.maxMs);
+
+    const alerts = [];
+    for (const k of tasks) {
+      if (!k || !k.id) continue;
+      if (progressMap[k.id] && progressMap[k.id].done) continue;
+      const dueMs = parseDeadlineMs(k.dueAt ?? k.deadline ?? k.dueDate ?? k.due);
+      if (!dueMs || dueMs <= now) continue;
+      const rem = dueMs - now;
+      const matched = windows.find((w) => rem <= w.maxMs);
+      if (!matched) continue;
+
+      const dedupeKey = `due:${k.id}:${matched.key}:${dueMs}`;
+      if (sentKeys[dedupeKey]) continue;
+
+      for (const w of windows) {
+        if (w.maxMs >= matched.maxMs) {
+          sentKeys[`due:${k.id}:${w.key}:${dueMs}`] = now;
+        }
+      }
+
+      const course = coursesById[k.courseId] || {};
+      const courseName = l === 'en' ? (course.titleEn || course.title || '') : (course.title || course.titleEn || '');
+      const taskTitle = l === 'en' ? (k.titleEn || k.title || 'Task') : (k.title || k.titleEn || 'مهمة');
+      const remTxt = formatTimeRemaining(rem, l);
+
+      const title = matched.key === '1h'
+        ? txt(l, 'تنبيه عاجل: موعد تسليم قريب', 'Urgent: Task deadline very soon')
+        : txt(l, 'اقتراب موعد تسليم مهمة', 'Task deadline approaching');
+      const body = courseName
+        ? txt(
+            l,
+            `باقي ${remTxt} على موعد تسليم «${taskTitle}» في دورة «${courseName}».`,
+            `${remTxt} left until "${taskTitle}" is due in "${courseName}".`
+          )
+        : txt(
+            l,
+            `باقي ${remTxt} على موعد تسليم «${taskTitle}».`,
+            `${remTxt} left until "${taskTitle}" is due.`
+          );
+
+      alerts.push({
+        id: dedupeKey,
+        kind: 'due',
+        stage: matched.key,
+        title,
+        body,
+        courseId: k.courseId || '',
+        taskId: k.id,
+        dueAt: dueMs,
+        at: now,
+        read: false
+      });
+    }
+
+    return { alerts, sentKeys };
+  }
+
+  function findApproachingReminderAlerts(opts) {
+    const o = opts || {};
+    const reminders = Array.isArray(o.reminders) ? o.reminders : [];
+    const sentKeys = { ...(o.sentKeys || {}) };
+    const now = typeof o.now === 'number' ? o.now : Date.now();
+    const l = o.lang === 'en' ? 'en' : 'ar';
+    const windows = (Array.isArray(o.windows) && o.windows.length ? o.windows : DEFAULT_WINDOWS)
+      .slice()
+      .sort((a, b) => a.maxMs - b.maxMs);
+
+    const alerts = [];
+    for (const r of reminders) {
+      if (!r || !r.id || r.done) continue;
+      const dueMs = parseDeadlineMs(r.at);
+      if (!dueMs || dueMs <= now) continue;
+      const rem = dueMs - now;
+      const matched = windows.find((w) => rem <= w.maxMs);
+      if (!matched) continue;
+
+      const dedupeKey = `rem_due:${r.id}:${matched.key}:${dueMs}`;
+      if (sentKeys[dedupeKey]) continue;
+
+      for (const w of windows) {
+        if (w.maxMs >= matched.maxMs) {
+          sentKeys[`rem_due:${r.id}:${w.key}:${dueMs}`] = now;
+        }
+      }
+
+      const remTxt = formatTimeRemaining(rem, l);
+      const title = matched.key === '1h'
+        ? txt(l, 'اقترب الموعد المحدد (أقل من ساعة)', 'Upcoming deadline (under 1 hr)')
+        : txt(l, 'تذكير بموعد تسليم قريب', 'Upcoming task deadline');
+      const body = r.courseTitle
+        ? txt(l, `باقي ${remTxt} على «${r.title}» (${r.courseTitle}).`, `${remTxt} left for "${r.title}" (${r.courseTitle}).`)
+        : txt(l, `باقي ${remTxt} على «${r.title}».`, `${remTxt} left for "${r.title}".`);
+
+      alerts.push({
+        id: dedupeKey,
+        kind: 'due',
+        stage: matched.key,
+        title,
+        body,
+        courseId: r.courseId || '',
+        taskId: r.taskId || '',
+        dueAt: dueMs,
+        at: now,
+        read: false
+      });
+    }
+
+    return { alerts, sentKeys };
+  }
+
+  function detectNewLectures(opts) {
+    const o = opts || {};
+    const course = o.course || {};
+    const lectures = Array.isArray(o.lectures) ? o.lectures : [];
+    const seenByCourse = { ...(o.seenByCourse || {}) };
+    const sentKeys = { ...(o.sentKeys || {}) };
+    const now = typeof o.now === 'number' ? o.now : Date.now();
+    const l = o.lang === 'en' ? 'en' : 'ar';
+
+    if (!course.id) return { alerts: [], seenByCourse, sentKeys };
+
+    const currentIds = lectures.map((x) => String(x.id)).filter(Boolean);
+    const prev = seenByCourse[course.id];
+
+    // First time we observe this course for the user: seed baseline silently
+    if (!prev || !Array.isArray(prev.ids)) {
+      seenByCourse[course.id] = { ids: [...new Set(currentIds)], seededAt: now };
+      return { alerts: [], seenByCourse, sentKeys };
+    }
+
+    const prevSet = new Set(prev.ids.map(String));
+    const alerts = [];
+    const courseName = l === 'en' ? (course.titleEn || course.title || 'Course') : (course.title || course.titleEn || 'الدورة');
+
+    for (const lec of lectures) {
+      if (!lec || !lec.id) continue;
+      const lid = String(lec.id);
+      if (prevSet.has(lid)) continue;
+      prevSet.add(lid);
+
+      const dedupeKey = `lec:${course.id}:${lid}`;
+      if (sentKeys[dedupeKey]) continue;
+      sentKeys[dedupeKey] = now;
+
+      const lecTitle = l === 'en' ? (lec.titleEn || lec.title || 'New lecture') : (lec.title || lec.titleEn || 'محاضرة جديدة');
+      alerts.push({
+        id: dedupeKey,
+        kind: 'lecture',
+        title: txt(l, 'محاضرة جديدة متاحة', 'New lecture available'),
+        body: txt(
+          l,
+          `توفرت محاضرة جديدة «${lecTitle}» في دورة «${courseName}».`,
+          `A new lecture "${lecTitle}" is now available in "${courseName}".`
+        ),
+        courseId: course.id,
+        lectureId: lid,
+        at: now,
+        read: false
+      });
+    }
+
+    seenByCourse[course.id] = {
+      ids: [...prevSet],
+      seededAt: prev.seededAt || now
+    };
+
+    return { alerts, seenByCourse, sentKeys };
+  }
+
+  return {
+    buildCourseDetails,
+    formatLectureCount,
+    formatTaskCount,
+    getEnrolledCourses,
+    parseDeadlineMs,
+    formatTimeRemaining,
+    findApproachingTaskAlerts,
+    findApproachingReminderAlerts,
+    detectNewLectures
+  };
+}));
+</script>
+<script>
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) {
+    module.exports = factory();
+  } else {
+    root.DWCourseFeatures = factory();
+  }
+}(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  function txt(lang, ar, en) {
+    return lang === 'en' ? en : ar;
+  }
+
+  function isCourseCompleted(tasks, progressMap) {
+    const list = Array.isArray(tasks) ? tasks.filter((k) => k && k.id) : [];
+    const prog = progressMap || {};
+    const totalCount = list.length;
+    if (totalCount === 0) {
+      return { completed: false, doneCount: 0, totalCount: 0, percent: 0 };
+    }
+    let doneCount = 0;
+    for (const k of list) {
+      if (prog[k.id] && prog[k.id].done) doneCount++;
+    }
+    const percent = Math.round((doneCount / totalCount) * 100);
+    return {
+      completed: doneCount >= totalCount,
+      doneCount,
+      totalCount,
+      percent
+    };
+  }
+
+  function validateReviewInput(rating, comment, lang) {
+    const l = lang === 'en' ? 'en' : 'ar';
+    const r = Number(rating);
+    if (!Number.isInteger(r) || r < 1 || r > 5) {
+      return {
+        ok: false,
+        rating: 0,
+        comment: '',
+        error: txt(l, 'اختر تقييمًا من 1 إلى 5 نجوم.', 'Please select a star rating from 1 to 5.')
+      };
+    }
+    const clean = String(comment || '').trim();
+    if (clean.length < 3) {
+      return {
+        ok: false,
+        rating: r,
+        comment: clean,
+        error: txt(l, 'اكتب مراجعة قصيرة لا تقل عن 3 أحرف.', 'Please write a short review of at least 3 characters.')
+      };
+    }
+    if (clean.length > 400) {
+      return {
+        ok: false,
+        rating: r,
+        comment: clean.slice(0, 400),
+        error: txt(l, 'المراجعة يجب ألا تتجاوز 400 حرف.', 'Review must be 400 characters or fewer.')
+      };
+    }
+    return {
+      ok: true,
+      rating: r,
+      comment: clean,
+      error: ''
+    };
+  }
+
+  function computeReviewStats(reviews) {
+    const breakdown = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+    const valid = [];
+    if (Array.isArray(reviews)) {
+      for (const item of reviews) {
+        if (!item) continue;
+        const r = Math.round(Number(item.rating));
+        if (!Number.isFinite(r) || r < 1 || r > 5) continue;
+        breakdown[r]++;
+        valid.push({
+          ...item,
+          rating: r,
+          comment: String(item.comment || '').trim(),
+          ts: Number(item.updatedAt || item.createdAt || 0) || 0
+        });
+      }
+    }
+    valid.sort((a, b) => b.ts - a.ts);
+    const count = valid.length;
+    const sum = valid.reduce((acc, x) => acc + x.rating, 0);
+    const average = count ? Math.round((sum / count) * 10) / 10 : 0;
+    return {
+      count,
+      average,
+      averageText: average.toFixed(1),
+      breakdown,
+      sorted: valid
+    };
+  }
+
+  function upsertReviewList(reviews, nextReview) {
+    const list = Array.isArray(reviews) ? reviews.slice() : [];
+    if (!nextReview) return computeReviewListSort(list);
+    const idx = list.findIndex((x) => {
+      if (!x) return false;
+      if (nextReview.id && x.id === nextReview.id) return true;
+      if (nextReview.uid && nextReview.courseId && x.uid === nextReview.uid && x.courseId === nextReview.courseId) return true;
+      return false;
+    });
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], ...nextReview };
+    } else {
+      list.unshift(nextReview);
+    }
+    return computeReviewListSort(list);
+  }
+
+  function computeReviewListSort(list) {
+    return list
+      .filter(Boolean)
+      .slice()
+      .sort((a, b) => (Number(b.updatedAt || b.createdAt || 0) || 0) - (Number(a.updatedAt || a.createdAt || 0) || 0));
+  }
+
+  function getSupportFaqs(lang) {
+    const l = lang === 'en' ? 'en' : 'ar';
+    return [
+      {
+        id: 'faq-billing-activate',
+        cat: 'billing',
+        q: txt(
+          l,
+          'كيف أشترك في دورة مدفوعة ومتى يتم تفعيلها؟',
+          'How do I subscribe to a paid course and when is it activated?'
+        ),
+        a: txt(
+          l,
+          'من صفحة الدورة أو قسم الاشتراكات يمكنك التحويل عبر إنستا باي ورفع صورة الإيصال، أو الدفع الفوري من رصيد المحفظة. تراجع الإدارة طلبات إنستا باي وتفعّل الدورة خلال وقت قصير، مع إصدار فاتورة قابلة للتحميل لمدة 72 ساعة.',
+          'From the course page or Subscriptions section, transfer via InstaPay and upload your receipt, or pay instantly from your wallet balance. Admins review InstaPay requests shortly and activate access with a downloadable invoice valid for 72 hours.'
+        )
+      },
+      {
+        id: 'faq-locked-tasks',
+        cat: 'courses',
+        q: txt(
+          l,
+          'لماذا تبدو بعض المهام أو الاختبارات مقفولة داخل الدورة؟',
+          'Why are some tasks or quizzes locked inside a course?'
+        ),
+        a: txt(
+          l,
+          'تُفتح المهام بالترتيب التعليمي خطوة بخطوة لضمان استيعاب المنهج؛ بمجرد إتمام المهمة الحالية أو اجتياز الاختبار تُفتح المهمة التالية تلقائيًا ويتحدث شريط التقدم.',
+          'Tasks unlock sequentially to guide your study flow. As soon as you complete the current task or pass its quiz, the next task unlocks automatically and your progress bar updates.'
+        )
+      },
+      {
+        id: 'faq-course-reviews',
+        cat: 'courses',
+        q: txt(
+          l,
+          'متى يمكنني إضافة تقييم ومراجعة للدورة؟',
+          'When can I submit a star rating and review for a course?'
+        ),
+        a: txt(
+          l,
+          'يتاح نموذج التقييم والمراجعة في صفحة تفاصيل الدورة بمجرد إكمال 100% من مهام الدورة. يمكنك اختيار عدد النجوم وكتابة رأيك القصير وتعديله في أي وقت.',
+          'The rating and review form unlocks on the course details page as soon as you reach 100% completion across all course tasks. You can choose a star rating, add a short review, and update it anytime.'
+        )
+      },
+      {
+        id: 'faq-alerts-deadlines',
+        cat: 'courses',
+        q: txt(
+          l,
+          'كيف تعمل تنبيهات مواعيد التسليم والمحاضرات الجديدة؟',
+          'How do task deadline alerts and new lecture notifications work?'
+        ),
+        a: txt(
+          l,
+          'يرسل التطبيق تنبيهات محلية تلقائية قبل موعد تسليم المهمة بـ 24 ساعة ثم قبل ساعة واحدة، كما ينبهك فور توفر محاضرة جديدة في الدورات المشترك بها. يمكنك تخصيصها من الإعدادات.',
+          'The app automatically triggers local alerts 24 hours and 1 hour before upcoming task deadlines, plus instant alerts whenever a new lecture is published in your enrolled courses. You can manage preferences in Settings.'
+        )
+      },
+      {
+        id: 'faq-screen-shield',
+        cat: 'account',
+        q: txt(
+          l,
+          'لماذا تظهر شاشة الحماية أو يختفي المحتوى أحيانًا؟',
+          'Why does the content protection shield or blur appear sometimes?'
+        ),
+        a: txt(
+          l,
+          'تعمل حماية المحتوى تلقائيًا لمنع التقاط لقطات الشاشة أو تسجيل الفيديو أو فتح أدوات المطور عند فقدان التركيز عن النافذة. عد إلى نافذة التطبيق أو أغلق برامج التسجيل ليعود العرض فورًا.',
+          'Content protection activates automatically to block screenshots, screen recording, and developer tools when the window loses focus. Return focus to the app window or close capture tools to resume immediately.'
+        )
+      },
+      {
+        id: 'faq-media-offline',
+        cat: 'technical',
+        q: txt(
+          l,
+          'ماذا أفعل إذا تعذر تحميل ملف PDF أو تشغيل محاضرة فيديو؟',
+          'What should I do if a PDF file or lecture video fails to load?'
+        ),
+        a: txt(
+          l,
+          'تأكد من استقرار الاتصال بالإنترنت وأعد فتح المهمة، أو استخدم وضع التحميل بدون إنترنت في تطبيق سطح المكتب والأندرويد. إذا استمرت المشكلة، افتح تذكرة دعم مع إرفاق لقطة توضيحية.',
+          'Verify your internet connection and reopen the task, or use offline downloads in the desktop/Android app. If the issue persists, open a support ticket with a screenshot so the team can assist.'
+        )
+      }
+    ];
+  }
+
+  function filterFaqs(faqs, query, category) {
+    const list = Array.isArray(faqs) ? faqs : [];
+    const cat = String(category || 'all').trim();
+    const q = String(query || '').trim().toLowerCase();
+    return list.filter((item) => {
+      if (!item) return false;
+      if (cat && cat !== 'all' && item.cat !== cat) return false;
+      if (!q) return true;
+      return (
+        String(item.q || '').toLowerCase().includes(q) ||
+        String(item.a || '').toLowerCase().includes(q)
+      );
+    });
+  }
+
+  return {
+    isCourseCompleted,
+    validateReviewInput,
+    computeReviewStats,
+    upsertReviewList,
+    getSupportFaqs,
+    filterFaqs
+  };
+}));
+</script>
+<script>
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) {
+    module.exports = factory();
+  } else {
+    root.DWStudentBadges = factory();
+  }
+}(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  function txt(lang, ar, en) {
+    return lang === 'en' ? en : ar;
+  }
+
+  function computeStreakDays(daysMap, nowMs) {
+    const map = daysMap && typeof daysMap === 'object' ? daysMap : {};
+    const now = Number.isFinite(Number(nowMs)) ? Number(nowMs) : Date.now();
+    let streak = 0;
+    for (let i = 0; i < 400; i++) {
+      const d = new Date(now - i * 86400000).toDateString();
+      if (Number(map[d]) > 0) {
+        streak++;
+      } else if (i > 0) {
+        break;
+      }
+    }
+    return streak;
+  }
+
+  function computeStudyMinutes(studyMap) {
+    const map = studyMap && typeof studyMap === 'object' ? studyMap : {};
+    let total = 0;
+    for (const k of Object.keys(map)) {
+      const v = Number(map[k]);
+      if (Number.isFinite(v) && v > 0) total += v;
+    }
+    return Math.round(total);
+  }
+
+  function getMilestoneDefinitions(lang) {
+    const l = lang === 'en' ? 'en' : 'ar';
+    return [
+      {
+        id: 'first-step',
+        kind: 'milestone',
+        tier: 'bronze',
+        icon: 'spark',
+        metric: 'totalDoneTasks',
+        target: 1,
+        unitAr: 'مهمة',
+        unitEn: 'task',
+        title: txt(l, 'الخطوة الأولى', 'First Step'),
+        desc: txt(l, 'أتمم أول مهمة تعليمية لك على المنصة', 'Complete your first learning task on the platform')
+      },
+      {
+        id: 'dedicated-10',
+        kind: 'milestone',
+        tier: 'silver',
+        icon: 'award',
+        metric: 'totalDoneTasks',
+        target: 10,
+        unitAr: 'مهام',
+        unitEn: 'tasks',
+        title: txt(l, 'متعلم مثابر', 'Dedicated Learner'),
+        desc: txt(l, 'أتمم 10 مهام تعليمية بنجاح', 'Complete 10 learning tasks successfully')
+      },
+      {
+        id: 'scholar-25',
+        kind: 'milestone',
+        tier: 'gold',
+        icon: 'trophy',
+        metric: 'totalDoneTasks',
+        target: 25,
+        unitAr: 'مهام',
+        unitEn: 'tasks',
+        title: txt(l, 'باحث متميز', 'Master Scholar'),
+        desc: txt(l, 'أتمم 25 مهمة تعليمية عبر دوراتك', 'Complete 25 learning tasks across your courses')
+      },
+      {
+        id: 'course-1',
+        kind: 'milestone',
+        tier: 'gold',
+        icon: 'medal',
+        metric: 'completedCoursesCount',
+        target: 1,
+        unitAr: 'دورة',
+        unitEn: 'course',
+        title: txt(l, 'خريج أول دورة', 'Course Finisher'),
+        desc: txt(l, 'أكمل 100% من مهام دورة كاملة', 'Complete 100% of tasks in one full course')
+      },
+      {
+        id: 'courses-3',
+        kind: 'milestone',
+        tier: 'platinum',
+        icon: 'trophy',
+        metric: 'completedCoursesCount',
+        target: 3,
+        unitAr: 'دورات',
+        unitEn: 'courses',
+        title: txt(l, 'بطل المنهج', 'Curriculum Champion'),
+        desc: txt(l, 'أكمل 3 دورات دراسية بنسبة 100%', 'Complete 3 full courses at 100%')
+      },
+      {
+        id: 'streak-3',
+        kind: 'milestone',
+        tier: 'bronze',
+        icon: 'spark',
+        metric: 'streakDays',
+        target: 3,
+        unitAr: 'أيام',
+        unitEn: 'days',
+        title: txt(l, 'انطلاقة منتظمة', '3-Day Streak'),
+        desc: txt(l, 'حافظ على نشاطك الدراسي 3 أيام متتالية', 'Keep your study activity for 3 consecutive days')
+      },
+      {
+        id: 'streak-7',
+        kind: 'milestone',
+        tier: 'gold',
+        icon: 'award',
+        metric: 'streakDays',
+        target: 7,
+        unitAr: 'أيام',
+        unitEn: 'days',
+        title: txt(l, 'أسبوع التزام', '7-Day Streak'),
+        desc: txt(l, 'واصل التعلم لمدة 7 أيام متتالية', 'Keep learning for 7 consecutive days')
+      },
+      {
+        id: 'study-60',
+        kind: 'milestone',
+        tier: 'silver',
+        icon: 'clock',
+        metric: 'studyMinutes',
+        target: 60,
+        unitAr: 'دقيقة',
+        unitEn: 'min',
+        title: txt(l, 'ساعة تركيز', 'Focused Hour'),
+        desc: txt(l, 'أكمل 60 دقيقة مذاكرة بمؤقت البومودورو', 'Log 60 minutes with the Pomodoro study timer')
+      },
+      {
+        id: 'reviewer-1',
+        kind: 'milestone',
+        tier: 'silver',
+        icon: 'star',
+        metric: 'reviewCount',
+        target: 1,
+        unitAr: 'مراجعة',
+        unitEn: 'review',
+        title: txt(l, 'صوت الطالب', 'Course Reviewer'),
+        desc: txt(l, 'قيّم دورة أتممتها واكتب مراجعتك الأولى', 'Rate a completed course and submit your first review')
+      }
+    ];
+  }
+
+  function resolveCourseDoneCount(course, doneByCourse, validTaskIdsByCourse) {
+    const cid = course && course.id;
+    if (!cid) return 0;
+    const rawSet = doneByCourse && doneByCourse[cid];
+    if (!rawSet) return 0;
+    const list = Array.isArray(rawSet) ? rawSet : Array.from(rawSet);
+    const validIds = validTaskIdsByCourse && validTaskIdsByCourse[cid];
+    if (validIds) {
+      const validSet = validIds instanceof Set ? validIds : new Set(validIds);
+      let count = 0;
+      const seen = new Set();
+      for (const id of list) {
+        if (validSet.has(id) && !seen.has(id)) {
+          seen.add(id);
+          count++;
+        }
+      }
+      return count;
+    }
+    return new Set(list).size;
+  }
+
+  function evaluateStudentBadges(input) {
+    const cfg = input || {};
+    const lang = cfg.lang === 'en' ? 'en' : 'ar';
+    const courses = Array.isArray(cfg.courses) ? cfg.courses.filter((c) => c && c.id) : [];
+    const doneByCourse = cfg.doneByCourse || {};
+    const validIdsByCourse = cfg.validTaskIdsByCourse || {};
+    const totalTasksByCourse = cfg.totalTasksByCourse || {};
+    const unlockedMap = cfg.unlockedMap && typeof cfg.unlockedMap === 'object' ? cfg.unlockedMap : {};
+
+    const courseProgressList = [];
+    let completedCoursesCount = 0;
+    let derivedDoneTasks = 0;
+
+    for (const c of courses) {
+      const rawTotal = totalTasksByCourse[c.id] !== undefined ? totalTasksByCourse[c.id] : c.taskCount;
+      const total = Math.max(0, Number(rawTotal) || 0);
+      const rawDone = resolveCourseDoneCount(c, doneByCourse, validIdsByCourse);
+      const done = total > 0 ? Math.min(rawDone, total) : rawDone;
+      derivedDoneTasks += rawDone;
+      const completed = total > 0 && done >= total;
+      if (completed) completedCoursesCount++;
+      const percent = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+      courseProgressList.push({
+        course: c,
+        done,
+        total,
+        completed,
+        percent
+      });
+    }
+
+    const totalDoneTasks = Math.max(Number(cfg.totalDoneTasks) || 0, derivedDoneTasks);
+    const streakDays = Number.isFinite(Number(cfg.streakDays))
+      ? Math.max(0, Number(cfg.streakDays))
+      : computeStreakDays(cfg.daysMap, cfg.now);
+    const studyMinutes = Number.isFinite(Number(cfg.studyMinutes))
+      ? Math.max(0, Number(cfg.studyMinutes))
+      : computeStudyMinutes(cfg.studyMap);
+    const reviewCount = Math.max(0, Number(cfg.reviewCount) || 0);
+
+    const metrics = {
+      totalDoneTasks,
+      completedCoursesCount,
+      streakDays,
+      studyMinutes,
+      reviewCount
+    };
+
+    const milestones = getMilestoneDefinitions(lang).map((def) => {
+      const current = metrics[def.metric] || 0;
+      const earned = current >= def.target;
+      const progressPercent = def.target > 0 ? Math.min(100, Math.round((current / def.target) * 100)) : 0;
+      const clampedCurrent = Math.min(current, def.target);
+      const unit = lang === 'en' ? def.unitEn : def.unitAr;
+      return {
+        id: def.id,
+        kind: 'milestone',
+        tier: def.tier,
+        icon: def.icon,
+        title: def.title,
+        desc: def.desc,
+        earned,
+        unlockedAt: earned ? (Number(unlockedMap[def.id]) || null) : null,
+        current: clampedCurrent,
+        actualCurrent: current,
+        target: def.target,
+        progressPercent,
+        progressText: `${clampedCurrent} / ${def.target} ${unit}`
+      };
+    });
+
+    const courseBadges = courseProgressList.map((cp) => {
+      const c = cp.course;
+      const id = 'course:' + c.id;
+      const cTitle = lang === 'en' ? (c.titleEn || c.title || c.id) : (c.title || c.titleEn || c.id);
+      const customTitle = lang === 'en' ? (c.badgeTitleEn || c.badgeTitle) : (c.badgeTitle || c.badgeTitleEn);
+      const title = customTitle || txt(lang, `إتقان ${cTitle}`, `${cTitle} Mastery`);
+      const desc = cp.total > 0
+        ? txt(lang, `أكمل جميع مهام دورة ${cTitle} (${cp.total} مهمة)`, `Complete all ${cp.total} tasks in ${cTitle}`)
+        : txt(lang, `أكمل جميع مهام دورة ${cTitle}`, `Complete all tasks in ${cTitle}`);
+      const unit = lang === 'en' ? 'tasks' : 'مهام';
+      return {
+        id,
+        kind: 'course',
+        courseId: c.id,
+        courseTitle: cTitle,
+        tier: 'gold',
+        icon: 'medal',
+        title,
+        desc,
+        earned: cp.completed,
+        unlockedAt: cp.completed ? (Number(unlockedMap[id]) || null) : null,
+        current: cp.done,
+        actualCurrent: cp.done,
+        target: cp.total,
+        progressPercent: cp.percent,
+        progressText: cp.total > 0 ? `${cp.done} / ${cp.total} ${unit}` : txt(lang, 'قريبًا', 'Pending tasks')
+      };
+    });
+
+    const allBadges = [...courseBadges, ...milestones];
+    allBadges.sort((a, b) => {
+      if (a.earned !== b.earned) return a.earned ? -1 : 1;
+      if (a.earned && b.earned) {
+        const ta = a.unlockedAt || 0;
+        const tb = b.unlockedAt || 0;
+        if (ta !== tb) return tb - ta;
+      }
+      if (a.progressPercent !== b.progressPercent) return b.progressPercent - a.progressPercent;
+      if (a.kind !== b.kind) return a.kind === 'course' ? -1 : 1;
+      return String(a.id).localeCompare(String(b.id));
+    });
+
+    const earnedCount = allBadges.filter((b) => b.earned).length;
+    const totalCount = allBadges.length;
+    const completionPercent = totalCount > 0 ? Math.round((earnedCount / totalCount) * 100) : 0;
+
+    return {
+      badges: allBadges,
+      earnedCount,
+      totalCount,
+      completionPercent,
+      metrics
+    };
+  }
+
+  function filterBadges(badges, filter) {
+    const list = Array.isArray(badges) ? badges : [];
+    const f = String(filter || 'all');
+    if (f === 'earned') return list.filter((b) => b && b.earned);
+    if (f === 'locked' || f === 'progress') return list.filter((b) => b && !b.earned);
+    if (f === 'course') return list.filter((b) => b && b.kind === 'course');
+    if (f === 'milestone') return list.filter((b) => b && b.kind === 'milestone');
+    return list.filter(Boolean);
+  }
+
+  function detectNewlyUnlockedBadges(badges, previousUnlockedMap, nowMs) {
+    const list = Array.isArray(badges) ? badges : [];
+    const prev = previousUnlockedMap && typeof previousUnlockedMap === 'object' ? { ...previousUnlockedMap } : {};
+    const now = Number.isFinite(Number(nowMs)) ? Number(nowMs) : Date.now();
+    const newlyUnlocked = [];
+    const nextUnlockedMap = { ...prev };
+
+    for (const b of list) {
+      if (!b || !b.id) continue;
+      if (b.earned) {
+        if (!nextUnlockedMap[b.id]) {
+          nextUnlockedMap[b.id] = now;
+          newlyUnlocked.push({ ...b, unlockedAt: now });
+        }
+      }
+    }
+
+    return {
+      newlyUnlocked,
+      nextUnlockedMap
+    };
+  }
+
+  return {
+    computeStreakDays,
+    computeStudyMinutes,
+    getMilestoneDefinitions,
+    evaluateStudentBadges,
+    filterBadges,
+    detectNewlyUnlockedBadges
+  };
+}));
+</script>
+<script>
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) {
+    module.exports = factory();
+  } else {
+    root.DWProgressChart = factory();
+  }
+}(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  function txt(lang, ar, en) {
+    return lang === 'en' ? en : ar;
+  }
+
+  function safeHttps(url) {
+    const s = String(url || '').trim();
+    return /^https:\/\//i.test(s) ? s : '';
+  }
+
+  function truncateLabel(str, maxLen) {
+    const chars = Array.from(String(str || '').trim());
+    const limit = Number.isFinite(Number(maxLen)) && maxLen > 3 ? Number(maxLen) : 18;
+    if (chars.length <= limit) return chars.join('');
+    return chars.slice(0, limit - 1).join('').trimEnd() + '…';
+  }
+
+  function countDoneForCourse(doneEntry, validEntry) {
+    if (doneEntry instanceof Set) {
+      if (validEntry instanceof Set) {
+        let count = 0;
+        for (const id of doneEntry) {
+          if (validEntry.has(id)) count++;
+        }
+        return count;
+      }
+      if (Array.isArray(validEntry)) {
+        const vset = new Set(validEntry);
+        let count = 0;
+        for (const id of doneEntry) {
+          if (vset.has(id)) count++;
+        }
+        return count;
+      }
+      return doneEntry.size;
+    }
+    if (Array.isArray(doneEntry)) {
+      const uniq = new Set(doneEntry);
+      return countDoneForCourse(uniq, validEntry);
+    }
+    const n = Number(doneEntry);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  }
+
+  function buildStudentProgressData(input) {
+    const opts = input && typeof input === 'object' ? input : {};
+    const lang = opts.lang === 'en' ? 'en' : 'ar';
+    const courses = Array.isArray(opts.courses) ? opts.courses : [];
+    const doneByCourse = opts.doneByCourse && typeof opts.doneByCourse === 'object' ? opts.doneByCourse : {};
+    const validByCourse = opts.validTaskIdsByCourse && typeof opts.validTaskIdsByCourse === 'object' ? opts.validTaskIdsByCourse : {};
+    const totalByCourse = opts.totalTasksByCourse && typeof opts.totalTasksByCourse === 'object' ? opts.totalTasksByCourse : {};
+    const daysMap = opts.daysMap && typeof opts.daysMap === 'object' ? opts.daysMap : {};
+    const nowMs = Number.isFinite(Number(opts.now)) ? Number(opts.now) : Date.now();
+
+    let totalTasks = 0;
+    let totalDone = 0;
+    let completedCourses = 0;
+
+    const courseItems = courses.map((c, idx) => {
+      const id = String((c && c.id) || ('course_' + idx));
+      const title = lang === 'en'
+        ? String((c && (c.titleEn || c.title)) || id)
+        : String((c && (c.title || c.titleEn)) || id);
+      const rawTotal = totalByCourse[id] !== undefined
+        ? Number(totalByCourse[id])
+        : (c && c.taskCount !== undefined ? Number(c.taskCount) : 0);
+      const courseTotal = Number.isFinite(rawTotal) && rawTotal > 0 ? Math.floor(rawTotal) : 0;
+      const rawDone = countDoneForCourse(doneByCourse[id], validByCourse[id]);
+      const courseDone = courseTotal > 0 ? Math.min(rawDone, courseTotal) : 0;
+      const remaining = Math.max(0, courseTotal - courseDone);
+      const percent = courseTotal > 0 ? Math.round((courseDone / courseTotal) * 100) : 0;
+      const status = courseTotal > 0 && courseDone >= courseTotal
+        ? 'completed'
+        : (courseDone > 0 ? 'in-progress' : 'not-started');
+
+      if (status === 'completed') completedCourses++;
+      totalTasks += courseTotal;
+      totalDone += courseDone;
+
+      return {
+        id,
+        title,
+        shortTitle: truncateLabel(title, 18),
+        totalTasks: courseTotal,
+        doneTasks: courseDone,
+        remainingTasks: remaining,
+        percent,
+        status,
+        statusLabel: status === 'completed'
+          ? txt(lang, 'مكتملة', 'Completed')
+          : (status === 'in-progress' ? txt(lang, 'قيد التقدم', 'In progress') : txt(lang, 'لم تبدأ', 'Not started'))
+      };
+    });
+
+    const overallPercent = totalTasks > 0 ? Math.round((totalDone / totalTasks) * 100) : 0;
+    const avgCoursePercent = courseItems.length > 0
+      ? Math.round(courseItems.reduce((sum, item) => sum + item.percent, 0) / courseItems.length)
+      : 0;
+
+    const locale = lang === 'ar' ? 'ar-EG' : 'en-GB';
+    const weekly = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(nowMs - i * 86400000);
+      const dateKey = d.toDateString();
+      const rawCount = Number(daysMap[dateKey]);
+      const count = Number.isFinite(rawCount) && rawCount > 0 ? Math.floor(rawCount) : 0;
+      let label = '';
+      let fullDate = '';
+      try {
+        label = d.toLocaleDateString(locale, { weekday: 'short' });
+        fullDate = d.toLocaleDateString(locale, { day: 'numeric', month: 'short' });
+      } catch (e) {
+        label = dateKey.slice(0, 3);
+        fullDate = dateKey;
+      }
+      weekly.push({
+        index: 6 - i,
+        dateKey,
+        label,
+        fullDate,
+        count
+      });
+    }
+
+    const weeklyTotal = weekly.reduce((sum, w) => sum + w.count, 0);
+    const weeklyMax = Math.max(1, ...weekly.map((w) => w.count));
+
+    return {
+      enrolledCount: courseItems.length,
+      completedCourses,
+      totalTasks,
+      totalDone,
+      remainingTasks: Math.max(0, totalTasks - totalDone),
+      overallPercent,
+      avgCoursePercent,
+      courseItems,
+      weekly,
+      weeklyTotal,
+      weeklyMax
+    };
+  }
+
+  function parseVersionParts(v) {
+    const clean = String(v || '').trim().replace(/^v/i, '');
+    if (!clean) return null;
+    const core = clean.split(/[-+]/)[0];
+    if (!/^\d+(?:\.\d+)*$/.test(core)) return null;
+    return core.split('.').map((n) => parseInt(n, 10));
+  }
+
+  function compareVersions(a, b) {
+    const pa = parseVersionParts(a);
+    const pb = parseVersionParts(b);
+    if (!pa && !pb) return 0;
+    if (!pa) return -1;
+    if (!pb) return 1;
+    const len = Math.max(pa.length, pb.length);
+    for (let i = 0; i < len; i++) {
+      const na = pa[i] || 0;
+      const nb = pb[i] || 0;
+      if (na > nb) return 1;
+      if (na < nb) return -1;
+    }
+    return 0;
+  }
+
+  function formatAsset(a) {
+    if (!a || typeof a !== 'object') return null;
+    const url = safeHttps(a.browser_download_url || a.url);
+    const size = Number(a.size) || 0;
+    return {
+      name: String(a.name || ''),
+      url,
+      size,
+      sizeLabel: size > 0 ? (size / 1048576).toFixed(1) + ' MB' : ''
+    };
+  }
+
+  function normalizeReleaseInfo(raw, kind) {
+    if (!raw || typeof raw !== 'object') return null;
+    const tagName = String(raw.tag_name || raw.tagName || '').trim();
+    const version = tagName.replace(/^v/i, '');
+    if (!version) return null;
+    const rawAssets = Array.isArray(raw.assets) ? raw.assets : [];
+    const assets = rawAssets.map(formatAsset).filter(Boolean);
+    const rawNotes = String(raw.body || raw.notes || '');
+    const force = /\[force\]/i.test(rawNotes);
+    const notes = rawNotes.replace(/\[force\]/ig, '').trim();
+
+    const findExt = (re) => assets.find((x) => re.test(x.name)) || null;
+    const picked = kind === 'android'
+      ? { apk: findExt(/\.apk$/i) }
+      : {
+          win: findExt(/\.exe$/i),
+          mac: findExt(/\.dmg$/i),
+          macZip: findExt(/-mac\.zip$|\.zip$/i),
+          linuxApp: findExt(/\.AppImage$/i),
+          linuxDeb: findExt(/\.deb$/i)
+        };
+
+    return {
+      kind: kind === 'android' ? 'android' : 'desktop',
+      tagName,
+      version,
+      title: String(raw.name || tagName).trim(),
+      publishedAt: raw.published_at || raw.publishedAt || '',
+      htmlUrl: safeHttps(raw.html_url || raw.htmlUrl),
+      notes: notes.slice(0, 1200),
+      force,
+      assets,
+      picked
+    };
+  }
+
+  function detectClientPlatform(userAgent, nativePlatform) {
+    const np = String(nativePlatform || '').toLowerCase();
+    if (np === 'win32') return 'win';
+    if (np === 'darwin') return 'mac';
+    if (np === 'linux') return 'linux';
+    const ua = String(userAgent || '').toLowerCase();
+    if (/android/.test(ua)) return 'android';
+    if (/iphone|ipad|ipod|macintosh|mac os x/.test(ua)) return 'mac';
+    if (/windows/.test(ua)) return 'win';
+    if (/linux|x11/.test(ua)) return 'linux';
+    return 'android';
+  }
+
+  function evaluateAppUpdate(input) {
+    const opts = input && typeof input === 'object' ? input : {};
+    const lang = opts.lang === 'en' ? 'en' : 'ar';
+    const isNative = !!opts.isNative;
+    const isDesktop = !!opts.isDesktop;
+    const currentVer = String(opts.currentVer || '').trim();
+    const currentWebVer = String(opts.currentWebVer || '').trim();
+    const seenVersion = String(opts.seenVersion || '').trim();
+    const platform = String(opts.platform || 'android');
+    const remote = opts.remoteConfig && typeof opts.remoteConfig === 'object' ? opts.remoteConfig : {};
+    const desktopRel = opts.desktopRelease || null;
+    const androidRel = opts.androidRelease || null;
+
+    if (isNative && isDesktop) {
+      const remoteVer = String(remote.desktopVer || '').replace(/^v/i, '');
+      const ghVer = desktopRel && desktopRel.version ? desktopRel.version : '';
+      const latestVersion = compareVersions(remoteVer, ghVer) >= 0 ? remoteVer : ghVer;
+      const hasUpdate = !!(latestVersion && currentVer && compareVersions(latestVersion, currentVer) > 0);
+      if (!hasUpdate) {
+        return {
+          hasUpdate: false,
+          shouldNotify: false,
+          shouldBanner: false,
+          channel: 'desktop',
+          currentVersion: currentVer || '1.0.0',
+          latestVersion: latestVersion || currentVer || ''
+        };
+      }
+      const force = !!(remote.forceUpdate || (desktopRel && desktopRel.force));
+      const dismissed = !!(!force && seenVersion && compareVersions(seenVersion, latestVersion) >= 0);
+      return {
+        hasUpdate: true,
+        shouldNotify: true,
+        shouldBanner: !dismissed,
+        channel: 'desktop',
+        currentVersion: currentVer,
+        latestVersion,
+        force,
+        releaseUrl: safeHttps(remote.desktopUrl) || (desktopRel && desktopRel.htmlUrl) || 'https://github.com/khaledahmed34567/DrWael-Desktop/releases/latest',
+        downloadUrl: '',
+        notes: String(remote.updateNotes || (desktopRel && desktopRel.notes) || ''),
+        title: txt(lang, 'يتوفر تحديث جديد لتطبيق سطح المكتب', 'New desktop app update available'),
+        body: txt(
+          lang,
+          'الإصدار ' + latestVersion + ' متاح الآن (نسختك الحالية ' + currentVer + '). حدّث التطبيق للحصول على أحدث المزايا.',
+          'Version ' + latestVersion + ' is ready (your version: ' + currentVer + '). Update now for the latest improvements.'
+        ),
+        ctaLabel: txt(lang, 'تحديث الآن', 'Update now')
+      };
+    }
+
+    if (isNative && !isDesktop) {
+      const remoteVer = String(remote.androidVer || '').replace(/^v/i, '');
+      const ghVer = androidRel && androidRel.version ? androidRel.version : '';
+      const latestVersion = compareVersions(remoteVer, ghVer) >= 0 ? remoteVer : ghVer;
+      const hasUpdate = !!(latestVersion && currentVer && compareVersions(latestVersion, currentVer) > 0);
+      if (!hasUpdate) {
+        return {
+          hasUpdate: false,
+          shouldNotify: false,
+          shouldBanner: false,
+          channel: 'android',
+          currentVersion: currentVer || '1.0.0',
+          latestVersion: latestVersion || currentVer || ''
+        };
+      }
+      const force = !!(remote.forceUpdate || (androidRel && androidRel.force));
+      const dismissed = !!(!force && seenVersion && compareVersions(seenVersion, latestVersion) >= 0);
+      const apkUrl = (androidRel && androidRel.picked && androidRel.picked.apk && androidRel.picked.apk.url) ||
+        'https://github.com/khaledahmed34567/DrWael-Androidapp/releases/latest/download/DrWael.apk';
+      return {
+        hasUpdate: true,
+        shouldNotify: true,
+        shouldBanner: !dismissed,
+        channel: 'android',
+        currentVersion: currentVer,
+        latestVersion,
+        force,
+        releaseUrl: safeHttps(remote.androidUrl) || (androidRel && androidRel.htmlUrl) || 'https://github.com/khaledahmed34567/DrWael-Androidapp/releases/latest',
+        downloadUrl: apkUrl,
+        notes: String(remote.updateNotes || (androidRel && androidRel.notes) || ''),
+        title: txt(lang, 'يتوفر تحديث جديد لتطبيق د. وائل', 'New Dr. Wael app update available'),
+        body: txt(
+          lang,
+          'الإصدار ' + latestVersion + ' متاح الآن لتحسين الأداء والحماية.',
+          'Version ' + latestVersion + ' is available with the latest improvements and protection.'
+        ),
+        ctaLabel: txt(lang, 'تحميل التحديث', 'Download update')
+      };
+    }
+
+    // Web client: check remote web version first, then native app release notifications
+    const remoteWebVer = String(remote.webVer || '').replace(/^v/i, '');
+    if (remoteWebVer && currentWebVer && compareVersions(remoteWebVer, currentWebVer) > 0) {
+      const force = !!remote.forceUpdate;
+      const dismissed = !!(!force && seenVersion && compareVersions(seenVersion, remoteWebVer) >= 0);
+      return {
+        hasUpdate: true,
+        shouldNotify: !dismissed,
+        shouldBanner: !dismissed,
+        channel: 'web',
+        currentVersion: currentWebVer,
+        latestVersion: remoteWebVer,
+        force,
+        releaseUrl: '',
+        downloadUrl: '',
+        notes: String(remote.updateNotes || ''),
+        title: txt(lang, 'يتوفر تحديث جديد للمنصة', 'New platform update available'),
+        body: String(remote.updateNotes || '').trim() || txt(
+          lang,
+          'تم نشر إصدار جديد من الموقع (' + remoteWebVer + '). حدّث الصفحة أو افتح التحميلات.',
+          'A new website version (' + remoteWebVer + ') is live. Refresh or check downloads.'
+        ),
+        ctaLabel: txt(lang, 'تحديث الصفحة', 'Refresh page')
+      };
+    }
+
+    const preferDesktop = platform === 'win' || platform === 'mac' || platform === 'linux';
+    const rel = preferDesktop ? (desktopRel || androidRel) : (androidRel || desktopRel);
+    if (!rel || !rel.version) {
+      return {
+        hasUpdate: false,
+        shouldNotify: false,
+        shouldBanner: false,
+        channel: 'web',
+        currentVersion: currentWebVer,
+        latestVersion: ''
+      };
+    }
+    const relKey = rel.kind + ':' + rel.version;
+    const dismissed = !rel.force && (seenVersion === relKey || seenVersion === rel.version);
+    return {
+      hasUpdate: true,
+      shouldNotify: !dismissed,
+      shouldBanner: !dismissed,
+      channel: rel.kind,
+      dismissKey: relKey,
+      currentVersion: currentWebVer,
+      latestVersion: rel.version,
+      force: !!rel.force,
+      releaseUrl: rel.htmlUrl || '',
+      downloadUrl: '',
+      notes: rel.notes || '',
+      title: rel.kind === 'desktop'
+        ? txt(lang, 'إصدار جديد من تطبيق سطح المكتب v' + rel.version, 'Desktop app update v' + rel.version + ' available')
+        : txt(lang, 'إصدار جديد من تطبيق الأندرويد v' + rel.version, 'Android app update v' + rel.version + ' available'),
+      body: txt(
+        lang,
+        'يتوفر الآن الإصدار ' + rel.version + ' للتحميل والتثبيت. اضغط لعرض روابط التحميل الرسمية وما الجديد.',
+        'Release ' + rel.version + ' is now available to download. Open Downloads to view direct links and release notes.'
+      ),
+      ctaLabel: txt(lang, 'روابط التحميل والتحديث', 'Download & release notes')
+    };
+  }
+
+  return {
+    buildStudentProgressData,
+    compareVersions,
+    normalizeReleaseInfo,
+    detectClientPlatform,
+    evaluateAppUpdate
+  };
+}));
+</script>
+<script>
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) {
+    module.exports = factory();
+  } else {
+    root.DWStudentPro = factory();
+  }
+}(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+  const PRO_FREE_LAUNCH_MS = Date.UTC(2026, 10, 21, 0, 0, 0);
+
+  function txt(lang, ar, en) {
+    return lang === 'en' ? en : ar;
+  }
+
+  function parseMs(val) {
+    if (!val) return 0;
+    if (typeof val === 'number') return Number.isFinite(val) && val > 0 ? val : 0;
+    if (typeof val === 'string') {
+      const n = Number(val);
+      if (Number.isFinite(n) && n > 0) return n;
+      const p = Date.parse(val);
+      return Number.isFinite(p) && p > 0 ? p : 0;
+    }
+    if (typeof val === 'object') {
+      if (typeof val.toDate === 'function') {
+        try {
+          const d = val.toDate();
+          return d ? d.getTime() : 0;
+        } catch (e) {
+          return 0;
+        }
+      }
+      if (typeof val.seconds === 'number') {
+        return val.seconds * 1000 + Math.round((val.nanoseconds || 0) / 1e6);
+      }
+    }
+    return 0;
+  }
+
+  function evaluateProAccess(profile, settings, nowMs) {
+    const now = typeof nowMs === 'number' && Number.isFinite(nowMs) ? nowMs : Date.now();
+    if (!profile) {
+      return {
+        active: false,
+        paid: false,
+        freeYearActive: false,
+        isAdmin: false,
+        freeUntil: 0,
+        paidUntil: 0,
+        effectiveUntil: 0,
+        daysRemaining: 0,
+        includesCourses: false,
+        source: 'none'
+      };
+    }
+
+    const isAdmin = profile.role === 'admin';
+    const paidUntil = parseMs(profile.vipUntil);
+    const paid = Boolean(profile.vip || paidUntil > now);
+    const s = settings || {};
+    const freeEnabled = s.freePro !== false && s.freeProYear !== false;
+
+    const createdMs = parseMs(profile.createdAt);
+    const freeStart = createdMs > 0 ? Math.max(createdMs, PRO_FREE_LAUNCH_MS) : PRO_FREE_LAUNCH_MS;
+    const freeUntil = freeEnabled ? (freeStart + ONE_YEAR_MS) : 0;
+    const freeYearActive = Boolean(freeEnabled && now < freeUntil);
+
+    const effectiveUntil = Math.max(paidUntil, freeYearActive ? freeUntil : 0);
+    const active = Boolean(isAdmin || paid || freeYearActive);
+    const daysRemaining = active && effectiveUntil > now
+      ? Math.max(1, Math.ceil((effectiveUntil - now) / 86400000))
+      : 0;
+
+    let source = 'none';
+    if (isAdmin) source = 'admin';
+    else if (paid) source = 'paid';
+    else if (freeYearActive) source = 'free-year';
+
+    return {
+      active,
+      paid,
+      freeYearActive,
+      isAdmin,
+      freeUntil,
+      paidUntil,
+      effectiveUntil,
+      daysRemaining,
+      includesCourses: false,
+      source
+    };
+  }
+
+  function hasCourseAccess(course, subsMap, profile) {
+    if (!course || !course.id) return false;
+    if (profile && profile.role === 'admin') return true;
+    const price = Number(course.price || 0);
+    if (price <= 0) return true;
+    return Boolean(subsMap && subsMap[course.id]);
+  }
+
+  function getProFeaturesList(lang) {
+    const l = lang === 'en' ? 'en' : 'ar';
+    return [
+      {
+        id: 'ai-chat',
+        title: txt(l, 'مساعد د. وائل AI وتلخيص المحاضرات', 'Dr. Wael AI & Lecture Summarizer'),
+        desc: txt(l, 'اسأل الذكاء الاصطناعي في المواد البيطرية ولخّص أي مهمة أو اختبار بضغطة واحدة.', 'Ask AI any study question and summarize tasks or quizzes in one tap.')
+      },
+      {
+        id: 'forum-group',
+        title: txt(l, 'المنتدى الخاص والجروب الجامع وأولوية النشر', 'Private Forum, Community Group & Priority'),
+        desc: txt(l, 'المشاركة في منتدى برو، الجروب الجامع، ورفع حتى 8 صور مع فترة انتظار أقصر.', 'Access Pro forum, community group chat, up to 8 images/post, and shorter cooldown.')
+      },
+      {
+        id: 'themes-cloud',
+        title: txt(l, 'الثيمات المميزة والأيقونات والحفظ السحابي', 'Pro Themes, Icons & Cloud Sync'),
+        desc: txt(l, 'فتح كل الثيمات، أيقونات التطبيق، وحفظ ملاحظات الـ PDF ومحادثات AI في حسابك.', 'Unlock all themes, app icons, and cloud sync for PDF notes and AI chats.')
+      },
+      {
+        id: 'student-hub',
+        title: txt(l, 'حقيبة الطالب الذكية والمراجعة', 'Smart Student Study Hub'),
+        desc: txt(l, 'بطاقات مراجعة بيطرية، خطة يومية، حاسبة GPA والمحاليل الوريدية، ومفكرة دراسية.', 'Veterinary flashcards, daily study planner, GPA & fluid calculators, and study notes.')
+      }
+    ];
+  }
+
+  function getDefaultFlashcards(lang) {
+    const l = lang === 'en' ? 'en' : 'ar';
+    return [
+      {
+        id: 'fc-anat-1',
+        subject: 'anatomy',
+        subjectLabel: txt(l, 'التشريح', 'Anatomy'),
+        front: txt(l, 'ما عدد الغرف في معدة المجترات (Ruminants)؟ وما وظيفة كل منها؟', 'What are the 4 compartments of the ruminant stomach and their main roles?'),
+        back: txt(l, 'الكرش (Rumen: التخمّر الميكروبي)، القلنسوة (Reticulum: التقاط الأجسام الغريبة ودفع البلعة)، الورقية (Omasum: امتصاص الماء والأملاح)، والمنفحة (Abomasum: المعدة الحقيقية الهاضمة بالإنزيمات والأحماض).', 'Rumen (microbial fermentation), Reticulum (honeycomb/hardware trap & regurgitation), Omasum (water/electrolyte absorption), Abomasum (true enzymatic/acidic stomach).')
+      },
+      {
+        id: 'fc-anat-2',
+        subject: 'anatomy',
+        subjectLabel: txt(l, 'التشريح', 'Anatomy'),
+        front: txt(l, 'أي الضلوع في الكلب والقطة يُعتبر الضلع العائم (Floating rib)؟', 'Which rib is the floating rib in dogs and cats?'),
+        back: txt(l, 'الضلع الثالث عشر (13th rib) لا يتصل غضروفه بالقوس الضلعي في أغلب الحالات وينتهي حرًا في عضلات جدار البطن.', 'The 13th rib (costochondral cartilage ends freely in the abdominal wall without joining the costal arch).')
+      },
+      {
+        id: 'fc-phys-1',
+        subject: 'physiology',
+        subjectLabel: txt(l, 'الفسيولوجي', 'Physiology'),
+        front: txt(l, 'ما المعدل الطبيعي لنبض القلب ودرجة الحرارة في الكلب البالغ؟', 'What are normal resting heart rate and rectal temperature in an adult dog?'),
+        back: txt(l, 'النبض: 70–120 نبضة/دقيقة (وقد يصل 160 في السلالات الصغيرة) · الحرارة المستقيمية: 38.0–39.2°م (100.5–102.5°F).', 'Heart rate: 70–120 bpm (up to ~160 in toy breeds) · Rectal temp: 38.0–39.2°C (100.5–102.5°F).')
+      },
+      {
+        id: 'fc-phys-2',
+        subject: 'physiology',
+        subjectLabel: txt(l, 'الفسيولوجي', 'Physiology'),
+        front: txt(l, 'ما زمن امتلاء الشعيرات الدموية (CRT) الطبيعي في الحيوانات الأليفة؟', 'What is the normal Capillary Refill Time (CRT) in small animals?'),
+        back: txt(l, 'أقل من ثانيتين (1–2 ثانية). تأخره (>2 ثانية) يشير عادةً إلى ضعف التروية أو الجفاف أو الصدمة.', 'Less than 2 seconds (1–2 s). Prolonged CRT (>2 s) suggests poor perfusion, dehydration, or shock.')
+      },
+      {
+        id: 'fc-pharm-1',
+        subject: 'pharmacology',
+        subjectLabel: txt(l, 'الفارماكولوجي', 'Pharmacology'),
+        front: txt(l, 'لماذا يُمنع إعطاء الباراسيتامول (Acetaminophen) للقطط؟', 'Why is Acetaminophen (Paracetamol) strictly contraindicated in cats?'),
+        back: txt(l, 'لأن القطط تفتقر لإنزيم Glucuronyl transferase اللازم لأيضه، مما يسبب تراكم نواتج سامة تدمر كرات الدم الحمراء (Methemoglobinemia) والكبد.', 'Cats lack UDP-glucuronosyltransferase needed for conjugation, leading to fatal methemoglobinemia, Heinz body anemia, and hepatotoxicity.')
+      },
+      {
+        id: 'fc-pharm-2',
+        subject: 'pharmacology',
+        subjectLabel: txt(l, 'الفارماكولوجي', 'Pharmacology'),
+        front: txt(l, 'ما الترياق النوعي (Antidote) لتسمم مضادات التخثر (Warfarin / Brodifacoum)؟', 'What is the specific antidote for anticoagulant rodenticide toxicity?'),
+        back: txt(l, 'فيتامين K1 (Phytomenadione) بجرعة علاجية مستمرة لمدة 2–4 أسابيع مع متابعة زمن التجلط PT.', 'Vitamin K1 (Phytomenadione) given for 2–4 weeks with prothrombin time (PT) monitoring.')
+      },
+      {
+        id: 'fc-para-1',
+        subject: 'micro',
+        subjectLabel: txt(l, 'الطفيليات والميكرو', 'Micro & Parasitology'),
+        front: txt(l, 'كيف تنتقل الدودة القلبية (Dirofilaria immitis) في الكلاب؟', 'How is canine heartworm (Dirofilaria immitis) transmitted?'),
+        back: txt(l, 'عن طريق لدغة البعوض الحامل للطور المعدي (L3)، ثم تهاجر وتنضج في الشرايين الرئوية والبطين الأيمن.', 'By infected mosquitoes transmitting L3 larvae, which mature in the pulmonary arteries and right heart chambers.')
+      },
+      {
+        id: 'fc-micro-2',
+        subject: 'micro',
+        subjectLabel: txt(l, 'الطفيليات والميكرو', 'Micro & Parasitology'),
+        front: txt(l, 'ما الفحص التشخيصي الأسرع لفيروس البارفو (Canine Parvovirus) في العيادة؟', 'What is the rapid in-clinic diagnostic test for Canine Parvovirus?'),
+        back: txt(l, 'اختبار المستضد السريع من البراز (Fecal ELISA Antigen SNAP test) مع ملاحظة نقص كرات الدم البيضاء في CBC.', 'Fecal antigen ELISA (SNAP test), often supported by leukopenia/neutropenia on CBC.')
+      },
+      {
+        id: 'fc-clin-1',
+        subject: 'clinical',
+        subjectLabel: txt(l, 'العيادة والطوارئ', 'Clinical & ER'),
+        front: txt(l, 'أول خطوات التعامل مع حالة التواء المعدة وتمددها الحاد (GDV) في الكلاب الكبيرة؟', 'What are the immediate stabilization priorities in Gastric Dilatation-Volvulus (GDV)?'),
+        back: txt(l, 'تعويض الصدمة بسوائل وريدية سريعة (Shock bolus) بالتوازي مع تفريغ الغازات (Trocarization أو أنبوب معدي) ثم التثبيت الجراحي (Gastropexy).', 'Aggressive IV shock fluid resuscitation plus gastric decompression (orogastric tube or trocarization) before surgical derotation & gastropexy.')
+      },
+      {
+        id: 'fc-clin-2',
+        subject: 'clinical',
+        subjectLabel: txt(l, 'العيادة والطوارئ', 'Clinical & ER'),
+        front: txt(l, 'كم معدل السوائل الوريدية اليومي الأساسي (Maintenance) التقريبي للكلاب والقطط؟', 'What is the approximate daily maintenance IV fluid rate for adult dogs and cats?'),
+        back: txt(l, 'حوالي 40–60 مل/كجم/يوم (أو ≈ 2 مل/كجم/ساعة)، ويُضاف إليها نسبة الجفاف (% × الوزن × 10) وأي فاقد مستمر.', 'Roughly 40–60 mL/kg/day (~2 mL/kg/hr), plus dehydration deficit (% × kg × 10) and ongoing losses.')
+      }
+    ];
+  }
+
+  function recordFlashcardReview(progressMap, cardId, status, nowMs) {
+    const next = Object.assign({}, progressMap || {});
+    if (!cardId) return next;
+    const prev = next[cardId] || { reviews: 0 };
+    next[cardId] = {
+      status: status === 'mastered' ? 'mastered' : 'review',
+      reviews: (Number(prev.reviews) || 0) + 1,
+      updatedAt: typeof nowMs === 'number' ? nowMs : Date.now()
+    };
+    return next;
+  }
+
+  function computeFlashcardStats(cards, progressMap) {
+    const list = Array.isArray(cards) ? cards.filter(Boolean) : [];
+    const prog = progressMap || {};
+    let mastered = 0;
+    let needsReview = 0;
+    let unseen = 0;
+    for (const c of list) {
+      const st = prog[c.id] && prog[c.id].status;
+      if (st === 'mastered') mastered++;
+      else if (st === 'review') needsReview++;
+      else unseen++;
+    }
+    const total = list.length;
+    const percent = total ? Math.round((mastered / total) * 100) : 0;
+    return { total, mastered, needsReview, unseen, percent };
+  }
+
+  function calculateGPA(entries, lang) {
+    const l = lang === 'en' ? 'en' : 'ar';
+    const list = Array.isArray(entries) ? entries : [];
+    let totalCredits = 0;
+    let totalPoints = 0;
+    let validCount = 0;
+
+    for (const item of list) {
+      if (!item) continue;
+      const credits = Number(item.credits);
+      const points = Number(item.gradePoints);
+      if (!Number.isFinite(credits) || credits <= 0) continue;
+      if (!Number.isFinite(points) || points < 0 || points > 4) continue;
+      totalCredits += credits;
+      totalPoints += credits * points;
+      validCount++;
+    }
+
+    const gpa = totalCredits > 0 ? Math.round((totalPoints / totalCredits) * 100) / 100 : 0;
+    const percentage = totalCredits > 0 ? Math.round((gpa / 4) * 1000) / 10 : 0;
+
+    let label = txt(l, 'أدخل المواد والساعات', 'Add courses & credits');
+    if (totalCredits > 0) {
+      if (gpa >= 3.5) label = txt(l, 'امتياز مع مرتبة الشرف', 'Excellent');
+      else if (gpa >= 3.0) label = txt(l, 'جيد جدًا', 'Very Good');
+      else if (gpa >= 2.4) label = txt(l, 'جيد', 'Good');
+      else if (gpa >= 2.0) label = txt(l, 'مقبول', 'Pass');
+      else label = txt(l, 'تحتاج لرفع المعدل', 'Needs improvement');
+    }
+
+    return {
+      gpa,
+      gpaText: gpa.toFixed(2),
+      percentage,
+      totalCredits,
+      validCount,
+      label
+    };
+  }
+
+  function calculateFluidRate(opts) {
+    const o = opts || {};
+    const weightKg = Number(o.weightKg);
+    const dehydrationPct = Math.max(0, Math.min(15, Number(o.dehydrationPct) || 0));
+    const maintenanceMlKgDay = Number(o.maintenanceMlKgDay) > 0 ? Number(o.maintenanceMlKgDay) : 50;
+    const ongoingLossMl = Math.max(0, Number(o.ongoingLossMl) || 0);
+    const dropFactor = Number(o.dropFactor) === 60 ? 60 : 20;
+
+    if (!Number.isFinite(weightKg) || weightKg <= 0) {
+      return { ok: false };
+    }
+
+    const maintenance24h = Math.round(weightKg * maintenanceMlKgDay);
+    const deficit24h = Math.round(weightKg * dehydrationPct * 10);
+    const total24h = Math.round(maintenance24h + deficit24h + ongoingLossMl);
+    const mlPerHour = Math.round((total24h / 24) * 10) / 10;
+    const dropsPerMin = Math.round(((mlPerHour * dropFactor) / 60) * 10) / 10;
+
+    return {
+      ok: true,
+      weightKg,
+      dehydrationPct,
+      maintenance24h,
+      deficit24h,
+      ongoingLossMl: Math.round(ongoingLossMl),
+      total24h,
+      mlPerHour,
+      dropsPerMin,
+      dropFactor
+    };
+  }
+
+  function computePlannerSummary(tasks, studyMap, goalMinutes, nowMs) {
+    const list = Array.isArray(tasks) ? tasks.filter(Boolean) : [];
+    const doneTasks = list.filter((t) => Boolean(t.done)).length;
+    const pendingTasks = list.length - doneTasks;
+    const now = typeof nowMs === 'number' && Number.isFinite(nowMs) ? nowMs : Date.now();
+    const goal = Number(goalMinutes) >= 10 ? Math.round(Number(goalMinutes)) : 60;
+
+    const map = studyMap || {};
+    const todayStr = new Date(now).toDateString();
+    const todayMinutes = Math.max(0, Number(map[todayStr] || 0));
+
+    let weekMinutes = 0;
+    for (let i = 0; i < 7; i++) {
+      const ds = new Date(now - i * 86400000).toDateString();
+      weekMinutes += Math.max(0, Number(map[ds] || 0));
+    }
+
+    const dailyPercent = Math.min(100, Math.round((todayMinutes / goal) * 100));
+    return {
+      totalTasks: list.length,
+      doneTasks,
+      pendingTasks,
+      todayMinutes,
+      weekMinutes,
+      goalMinutes: goal,
+      dailyPercent,
+      goalMet: todayMinutes >= goal
+    };
+  }
+
+  return {
+    ONE_YEAR_MS,
+    PRO_FREE_LAUNCH_MS,
+    evaluateProAccess,
+    hasCourseAccess,
+    getProFeaturesList,
+    getDefaultFlashcards,
+    recordFlashcardReview,
+    computeFlashcardStats,
+    calculateGPA,
+    calculateFluidRate,
+    computePlannerSummary
+  };
+}));
+</script>
 </head><body>
 <div id="dw-shield" aria-hidden="true"><b>محتوى محمي</b><span>التصوير أو لقطة الشاشة غير مسموح · Protected content — Screenshots blocked</span></div>
 <div id="dw-wm" aria-hidden="true"></div>
@@ -2318,6 +3987,7 @@ Object.assign(T.ar,{dl:"تحميل التطبيق"});Object.assign(T.en,{dl:"Dow
 I.download='<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>';
 const APP_WEB_VER="2.1.0";
 const DESK_REPO="khaledahmed34567/DrWael-Desktop",DESK_BASE="https://github.com/"+DESK_REPO+"/releases/latest/download/";
+const WIN_STORE_URL="https://apps.microsoft.com/detail/9nck2l097d7m?hl=en-US&gl=EG";
 const DL_REPO="khaledahmed34567/DrWael-Androidapp",DL_APK="https://github.com/"+DL_REPO+"/releases/latest/download/DrWael.apk";
 const isAdm=()=>!!(P&&(P.role==="admin"||(U&&U.email==="khwailedapp@gmail.com")));
 let _relCache=null,_relCacheAt=0,_appUpdateState=null,_proxyDl=!NAT&&location.protocol.startsWith("http");
@@ -2470,7 +4140,7 @@ function showDl(){
   const o=document.createElement("div");o.id="dlp";
   const useP=!NAT&&location.protocol.startsWith("http")&&_proxyDl!==false;
   const uApk=useP?"/dl/android":DL_APK;
-  const uWin=useP?"/dl/win":DESK_BASE+"DrWael-Setup.exe";
+  const uWin=WIN_STORE_URL;
   const uMac=useP?"/dl/mac":DESK_BASE+"DrWael-mac.dmg";
   const uMacZip=useP?"/dl/mac-zip":DESK_BASE+"DrWael-mac.zip";
   const uLnx=useP?"/dl/linux":DESK_BASE+"DrWael-linux.AppImage";
@@ -2493,8 +4163,8 @@ function showDl(){
       <div class="dldesk-grid">
         <div class="dl-os${plat==="win"?" rec":""}">
           <b>Windows</b>
-          <small id="dlwinSz">Installer (.exe · x64)</small>
-          <a class="btn ghost" id="dlwinA" href="${uWin}" download="DrWael-Setup.exe" rel="noopener noreferrer">${L("تحميل Windows","Download .exe")}</a>
+          <small id="dlwinSz">${L("متجر مايكروسوفت الرسمي · Windows 10/11","Microsoft Store · Windows 10/11")}</small>
+          <a class="btn ghost" id="dlwinA" href="${uWin}" target="_blank" rel="noopener noreferrer">${L("التحميل من Microsoft Store","Get from Microsoft Store")}</a>
         </div>
         <div class="dl-os${plat==="mac"?" rec":""}">
           <b>macOS</b>
@@ -2514,7 +4184,7 @@ function showDl(){
     </div>
     <div class="card" id="dln" style="display:none"></div>
     <div class="card"><h2>${L("لقطات من التطبيق","App screenshots")}</h2><div class="dlg" id="dlg"></div><div id="dlad"></div></div>
-    <div class="card"><h2>${L("طريقة التثبيت والتحديث","How to install & update")}</h2><ol class="dlsteps"><li>${L("اختر النسخة المناسبة لجهازك (APK للأندرويد أو مُثبّت Windows / macOS / Linux لسطح المكتب).","Choose the installer for your device (APK for Android or Windows / macOS / Linux for Desktop).")}</li><li>${L("افتح الملف واسمح بالتثبيت عند الطلب، ثم افتح التطبيق وسجّل دخولك بنفس حسابك.","Open the installer, allow installation if prompted, then launch and sign in with your account.")}</li><li>${L("تحديثات سطح المكتب تُحمّل تلقائيًا على ويندوز ولينكس، وتصلك إشعارات التحديث داخل المنصة فور توفر إصدار جديد.","Desktop updates download automatically on Windows & Linux, and in-app notifications alert you whenever a new release ships.")}</li></ol></div>
+    <div class="card"><h2>${L("طريقة التثبيت والتحديث","How to install & update")}</h2><ol class="dlsteps"><li>${L("اختر النسخة المناسبة لجهازك (APK للأندرويد أو Microsoft Store لويندوز / macOS / Linux لسطح المكتب).","Choose the installer for your device (APK for Android, Microsoft Store for Windows, or macOS / Linux for Desktop).")}</li><li>${L("افتح التطبيق أو المثبّت بعد التحميل واسمح بالتثبيت عند الطلب، ثم سجّل دخولك بنفس حسابك.","Open the app or installer, allow installation if prompted, then launch and sign in with your account.")}</li><li>${L("تحديثات سطح المكتب تُحدّث تلقائيًا عبر المتجر وداخل المنصة، وتصلك إشعارات التحديث فور توفر إصدار جديد.","Desktop updates arrive automatically via Microsoft Store & in-app notifications whenever a new release ships.")}</li></ol></div>
   </div>`;
   document.body.appendChild(o);
   $("#dlx").onclick=()=>o.remove();
@@ -2533,8 +4203,8 @@ function showDl(){
       v.textContent=L("أحدث إصدار APK مباشر","Direct latest APK download");
     }
     const dv=$("#dldv");
+    if($("#dlwinA"))$("#dlwinA").href=WIN_STORE_URL;
     if(px){
-      if($("#dlwinA"))$("#dlwinA").href="/dl/win";
       if($("#dlmacA"))$("#dlmacA").href="/dl/mac";
       if($("#dlmacZip"))$("#dlmacZip").href="/dl/mac-zip";
       if($("#dllnxA"))$("#dllnxA").href="/dl/linux";
@@ -2543,8 +4213,6 @@ function showDl(){
     if(dr&&dr.version){
       if(dv)dv.textContent=L("الإصدار ","v")+dr.version+(dr.publishedAt?" · "+fmtDt(dr.publishedAt):"");
       const p=dr.picked||{};
-      if(!px&&p.win&&p.win.url&&$("#dlwinA"))$("#dlwinA").href=p.win.url;
-      if(p.win&&p.win.sizeLabel&&$("#dlwinSz"))$("#dlwinSz").textContent=".exe · "+p.win.sizeLabel;
       if(!px&&p.mac&&p.mac.url&&$("#dlmacA"))$("#dlmacA").href=p.mac.url;
       if(!px&&p.macZip&&p.macZip.url&&$("#dlmacZip"))$("#dlmacZip").href=p.macZip.url;
       if(p.mac&&p.mac.sizeLabel&&$("#dlmacSz"))$("#dlmacSz").textContent=".dmg · "+p.mac.sizeLabel;
